@@ -3,22 +3,15 @@ import PosScreen from './components/PosScreen'
 import ContingencyScreen from './components/ContingencyScreen'
 import PinModal from './components/PinModal'
 import SyncManager from './components/SyncManager'
-import PorPagarScreen from './components/PorPagarScreen'
 import {
-  addAbonoToPorPagar,
   addPendingQueueItem,
-  cancelPorPagar,
-  createPorPagar,
   dbEvents,
-  getLastSale,
   getMeta,
+  getLastSale,
   getPendingQueue,
-  getPorPagarList,
   getProducts,
   getSettings,
   initDb,
-  markPorPagarDelivered,
-  nextPorPagarFolio,
   setLastSale,
   setMeta,
   upsertProducts
@@ -29,8 +22,7 @@ import {
   PendingQueueItem,
   Product,
   SalePayload,
-  UndoLastSalePayload,
-  VentaPorPagar
+  UndoLastSalePayload
 } from './lib/types'
 import { nowIso, uuid } from './lib/utils'
 
@@ -39,9 +31,8 @@ const PIN_LOCK_SECONDS = 120
 export default function App() {
   const [products, setProducts] = useState<Product[]>([])
   const [pending, setPending] = useState<PendingQueueItem[]>([])
-  const [porPagar, setPorPagar] = useState<VentaPorPagar[]>([])
   const [online, setOnline] = useState(navigator.onLine)
-  const [screen, setScreen] = useState<'pos' | 'contingency' | 'por_pagar'>('pos')
+  const [screen, setScreen] = useState<'pos' | 'contingency'>('pos')
   const [syncOpen, setSyncOpen] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [pinOpen, setPinOpen] = useState(false)
@@ -53,14 +44,16 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState('CAJA1')
 
   const catalogAvailable = products.length > 0
+
   const pendingCount = useMemo(() => pending.filter((p) => p.status === 'PENDING_SYNC').length, [pending])
 
   useEffect(() => {
     const init = async () => {
       await initDb()
-      setProducts(await getProducts())
-      setPending(await getPendingQueue())
-      setPorPagar(await getPorPagarList())
+      const list = await getProducts()
+      setProducts(list)
+      const queue = await getPendingQueue()
+      setPending(queue)
       const settings = await getSettings()
       if (settings?.user) setCurrentUser(settings.user)
       const lockUntil = await getMetaDate('pin_lock_until')
@@ -81,18 +74,13 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const onPending = () => getPendingQueue().then(setPending)
-    const onProducts = () => getProducts().then(setProducts)
-    const onPorPagar = () => getPorPagarList().then(setPorPagar)
-
-    dbEvents.addEventListener('pending-changed', onPending)
-    dbEvents.addEventListener('products-changed', onProducts)
-    dbEvents.addEventListener('por-pagar-changed', onPorPagar)
-
+    const pendingHandler = () => getPendingQueue().then(setPending)
+    const productsHandler = () => getProducts().then(setProducts)
+    dbEvents.addEventListener('pending-changed', pendingHandler)
+    dbEvents.addEventListener('products-changed', productsHandler)
     return () => {
-      dbEvents.removeEventListener('pending-changed', onPending)
-      dbEvents.removeEventListener('products-changed', onProducts)
-      dbEvents.removeEventListener('por-pagar-changed', onPorPagar)
+      dbEvents.removeEventListener('pending-changed', pendingHandler)
+      dbEvents.removeEventListener('products-changed', productsHandler)
     }
   }, [])
 
@@ -151,7 +139,8 @@ export default function App() {
 
   const enviarAn8n = async (payload: SalePayload) => {
     const N8N_WEBHOOK_URL = 'https://chatbotsn8n.com/webhook/0998ffe0-6f57-4fd1-95d4-b5a67494307b'
-    const totalVenta = payload.items.reduce((sum, item) => sum + item.qty * item.price_gross, 0)
+
+    const totalVenta = payload.items.reduce((sum, item) => sum + (item.qty * item.price_gross), 0)
 
     try {
       await fetch(N8N_WEBHOOK_URL, {
@@ -165,7 +154,6 @@ export default function App() {
           METODO_PAGO: payload.payment_method,
           RECIBIDO: totalVenta,
           CAMBIO: 0,
-          factura: payload.fiscal_data ?? { wants_invoice: false },
           items: payload.items
         })
       })
@@ -298,7 +286,6 @@ export default function App() {
   return (
     <div className="app">
       {message && <div className="toast">{message}</div>}
-
       {screen === 'pos' && (
         <PosScreen
           products={products}
@@ -310,7 +297,6 @@ export default function App() {
           onContingency={() => requestAdmin(() => setScreen('contingency'))}
           onUndo={() => requestAdmin(handleUndoRequest)}
           onRefreshCatalog={() => requestAdmin(refreshCatalog)}
-          onOpenPorPagar={() => setScreen('por_pagar')}
           onConfirmSale={handleConfirmSale}
           onQuickAddProduct={async (product) => {
             await upsertProducts([product])
@@ -320,78 +306,13 @@ export default function App() {
             await upsertProducts([product])
             setProducts(await getProducts())
           }}
-          onConvertToPorPagar={async ({ cart, customer_name, customer_phone, initial_payment, initial_payment_method }) => {
-            const total = Number(cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0).toFixed(2))
-            const paid = Number(Math.max(0, Math.min(total, initial_payment)).toFixed(2))
-            const balance = Number((total - paid).toFixed(2))
-            const folio = await nextPorPagarFolio()
-
-            const order: VentaPorPagar = {
-              id: uuid(),
-              folio,
-              created_at: nowIso(),
-              created_by: currentUser,
-              customer_name,
-              customer_phone,
-              items: cart.map((item) => ({
-                barcode: item.barcode,
-                sku: item.sku,
-                name: item.name,
-                unit_base: item.unit_base,
-                type: item.type,
-                pack_factor: item.pack_factor,
-                qty: item.qty,
-                qty_base: item.qty_base,
-                price_gross: item.price_gross
-              })),
-              total,
-              paid,
-              balance,
-              status: balance <= 0 ? 'LIQUIDADO' : 'ABIERTO',
-              delivered_at: null,
-              delivered_by: null,
-              canceled_at: null,
-              canceled_by: null,
-              cancellation_reason: null,
-              abonos: paid > 0 ? [{ id: uuid(), amount: paid, method: initial_payment_method, captured_at: nowIso() }] : []
-            }
-
-            await createPorPagar(order)
-            setPorPagar(await getPorPagarList())
-            setMessage(`Por pagar ${folio} creado.`)
-            return { folio, customer: customer_name, total, balance }
-          }}
         />
       )}
-
       {screen === 'contingency' && (
         <ContingencyScreen
           products={products}
           onBack={() => setScreen('pos')}
           onSave={handleSaveBatch}
-        />
-      )}
-
-      {screen === 'por_pagar' && (
-        <PorPagarScreen
-          items={porPagar}
-          onBack={() => setScreen('pos')}
-          onRegisterAbono={async (id, amount, method, capturedAt) => {
-            await addAbonoToPorPagar(id, { id: uuid(), amount, method, captured_at: capturedAt })
-            setPorPagar(await getPorPagarList())
-            setMessage('Abono registrado.')
-          }}
-          onCancel={async (id, reason) => {
-            await cancelPorPagar(id, currentUser, nowIso(), reason)
-            setPorPagar(await getPorPagarList())
-            setProducts(await getProducts())
-            setMessage('Por pagar cancelado.')
-          }}
-          onDeliver={async (id) => {
-            await markPorPagarDelivered(id, currentUser, nowIso())
-            setPorPagar(await getPorPagarList())
-            setMessage('Entrega registrada.')
-          }}
         />
       )}
 

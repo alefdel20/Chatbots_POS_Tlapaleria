@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CartItem } from '../lib/types'
 import { formatMoney } from '../lib/utils'
 
@@ -9,20 +9,16 @@ interface CartTableProps {
 }
 
 export default function CartTable({ items, onUpdateQty, onRemove }: CartTableProps) {
-  // drafts: permite escribir libremente (incluye '' mientras borras)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    // Sincroniza drafts con items actuales
     setDrafts((prev) => {
       const next: Record<string, string> = { ...prev }
 
-      // agrega drafts faltantes
       for (const it of items) {
         if (next[it.barcode] === undefined) next[it.barcode] = String(it.qty)
       }
 
-      // elimina drafts de items que ya no existen
       for (const k of Object.keys(next)) {
         if (!items.some((it) => it.barcode === k)) delete next[k]
       }
@@ -34,9 +30,8 @@ export default function CartTable({ items, onUpdateQty, onRemove }: CartTablePro
   const commitQty = (barcode: string) => {
     const raw = String(drafts[barcode] ?? '')
       .trim()
-      .replace(',', '.') // acepta coma decimal
+      .replace(',', '.')
 
-    // si lo dejan vacío, no crashees: regresa al valor actual
     if (raw === '') {
       const current = items.find((it) => it.barcode === barcode)
       setDrafts((prev) => ({ ...prev, [barcode]: String(current?.qty ?? 1) }))
@@ -78,7 +73,7 @@ export default function CartTable({ items, onUpdateQty, onRemove }: CartTablePro
                 <div>{item.name}</div>
                 {item.price_source === 'REMATE' && (
                   <div className="chip remate">
-                    {item.remate_label ?? 'Remate'}: {formatMoney(item.price_gross)}
+                    {item.remate_label ?? 'Remate'}
                   </div>
                 )}
                 {item.type === 'PAQUETE' && item.pack_factor && (

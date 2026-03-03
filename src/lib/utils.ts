@@ -40,5 +40,3 @@ export const getRematePrice = (product: Product): { price: number; label: string
   const fixed = Math.max(0.01, Number(product.remate_value.toFixed(2)))
   return { price: fixed, label: 'Remate precio fijo' }
 }
-
-export const isValidEmail = (value: string) => /.+@.+\..+/.test(value.trim())

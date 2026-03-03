@@ -40,23 +40,12 @@ export interface CartItem {
 }
 
 export type PaymentMethod = 'EFECTIVO' | 'TARJETA'
-export type ApartadoStatus = 'ABIERTO' | 'LIQUIDADO' | 'CANCELADO'
-
-export interface FiscalData {
-  wants_invoice: boolean
-  rfc?: string
-  razon_social?: string
-  email?: string
-  cp?: string
-  uso_cfdi?: string
-}
 
 export interface SalePayload {
   local_id: string
   captured_at: string
   user: string
   payment_method: PaymentMethod
-  fiscal_data?: FiscalData
   items: Array<{
     barcode: string
     sku: string
@@ -72,45 +61,6 @@ export interface SalePayload {
     type: ProductType
     pack_factor: number | null
   }>
-}
-
-export interface VentaPorPagarItem {
-  barcode: string
-  sku: string
-  name: string
-  unit_base: UnitBase
-  type: ProductType
-  pack_factor: number | null
-  qty: number
-  qty_base: number
-  price_gross: number
-}
-
-export interface Abono {
-  id: string
-  amount: number
-  method: PaymentMethod
-  captured_at: string
-}
-
-export interface VentaPorPagar {
-  id: string
-  folio: string
-  created_at: string
-  created_by: string
-  customer_name: string
-  customer_phone: string
-  items: VentaPorPagarItem[]
-  total: number
-  paid: number
-  balance: number
-  status: ApartadoStatus
-  delivered_at: string | null
-  delivered_by: string | null
-  canceled_at: string | null
-  canceled_by: string | null
-  cancellation_reason: string | null
-  abonos: Abono[]
 }
 
 export interface ContingencyLine {

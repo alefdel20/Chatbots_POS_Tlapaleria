@@ -1,4 +1,4 @@
-import { Product, PendingQueueItem, Settings, VentaPorPagar, Abono } from './types'
+import { Product, PendingQueueItem, Settings } from './types'
 import { sampleProducts } from './seed'
 
 const DB_NAME = 'pos_db'
@@ -9,7 +9,6 @@ const STORE_PENDING = 'pending_queue'
 const STORE_SETTINGS = 'settings'
 const STORE_META = 'meta'
 const STORE_SALES = 'sales'
-const STORE_POR_PAGAR = 'por_pagar'
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -28,11 +27,9 @@ const openDb = (): Promise<IDBDatabase> => {
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
-
     request.onupgradeneeded = (event) => {
       const db = request.result
       const tx = request.transaction
-
       if (!db.objectStoreNames.contains(STORE_PRODUCTS)) {
         db.createObjectStore(STORE_PRODUCTS, { keyPath: 'barcode' })
       }
@@ -48,9 +45,6 @@ const openDb = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(STORE_SALES)) {
         db.createObjectStore(STORE_SALES, { keyPath: 'id' })
       }
-      if (!db.objectStoreNames.contains(STORE_POR_PAGAR)) {
-        db.createObjectStore(STORE_POR_PAGAR, { keyPath: 'id' })
-      }
 
       const oldVersion = (event as IDBVersionChangeEvent).oldVersion
       if (oldVersion < 2 && tx && db.objectStoreNames.contains(STORE_PRODUCTS)) {
@@ -59,13 +53,11 @@ const openDb = (): Promise<IDBDatabase> => {
         cursorReq.onsuccess = () => {
           const cursor = cursorReq.result
           if (!cursor) return
-          const normalized = withRemateDefaults(cursor.value as Product)
-          cursor.update(normalized)
+          cursor.update(withRemateDefaults(cursor.value as Product))
           cursor.continue()
         }
       }
     }
-
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })
@@ -214,143 +206,4 @@ export const nextContingencyFolio = async (): Promise<string> => {
   const next = current + 1
   await setMeta(key, next)
   return `CONT-${yyyy}${mm}${dd}-${String(next).padStart(3, '0')}`
-}
-
-export const nextPorPagarFolio = async (): Promise<string> => {
-  const today = new Date()
-  const yyyy = today.getFullYear()
-  const mm = String(today.getMonth() + 1).padStart(2, '0')
-  const dd = String(today.getDate()).padStart(2, '0')
-  const key = `por-pagar-counter-${yyyy}${mm}${dd}`
-  const current = (await getMeta<number>(key)) ?? 0
-  const next = current + 1
-  await setMeta(key, next)
-  return `PP-${yyyy}${mm}${dd}-${String(next).padStart(3, '0')}`
-}
-
-export const getPorPagarList = () => getAll<VentaPorPagar>(STORE_POR_PAGAR)
-export const getPorPagarById = (id: string) => getByKey<VentaPorPagar>(STORE_POR_PAGAR, id)
-
-export const createPorPagar = async (order: VentaPorPagar): Promise<void> => {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS, STORE_POR_PAGAR], 'readwrite')
-    const productStore = tx.objectStore(STORE_PRODUCTS)
-    const orderStore = tx.objectStore(STORE_POR_PAGAR)
-
-    for (const item of order.items) {
-      const req = productStore.get(item.barcode)
-      req.onsuccess = () => {
-        const product = req.result as Product | undefined
-        if (!product || product.stock_snapshot === null) return
-        const nextStock = Math.max(0, product.stock_snapshot - item.qty_base)
-        productStore.put({ ...product, stock_snapshot: nextStock })
-      }
-    }
-
-    orderStore.put(order)
-
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-
-  emit('products-changed')
-  emit('por-pagar-changed')
-}
-
-export const addAbonoToPorPagar = async (id: string, abono: Abono): Promise<VentaPorPagar | null> => {
-  const db = await openDb()
-  return new Promise<VentaPorPagar | null>((resolve, reject) => {
-    const tx = db.transaction(STORE_POR_PAGAR, 'readwrite')
-    const store = tx.objectStore(STORE_POR_PAGAR)
-    const req = store.get(id)
-
-    req.onsuccess = () => {
-      const order = req.result as VentaPorPagar | undefined
-      if (!order) {
-        resolve(null)
-        return
-      }
-      if (order.status !== 'ABIERTO') {
-        resolve(order)
-        return
-      }
-      const nextPaid = Number((order.paid + abono.amount).toFixed(2))
-      const nextBalance = Number(Math.max(0, order.total - nextPaid).toFixed(2))
-      const updated: VentaPorPagar = {
-        ...order,
-        paid: nextPaid,
-        balance: nextBalance,
-        status: nextBalance <= 0 ? 'LIQUIDADO' : 'ABIERTO',
-        abonos: [...order.abonos, abono]
-      }
-      store.put(updated)
-      resolve(updated)
-    }
-
-    req.onerror = () => reject(req.error)
-    tx.onerror = () => reject(tx.error)
-    tx.oncomplete = () => emit('por-pagar-changed')
-  })
-}
-
-export const markPorPagarDelivered = async (id: string, user: string, at: string): Promise<VentaPorPagar | null> => {
-  const order = await getPorPagarById(id)
-  if (!order || order.status !== 'LIQUIDADO') return order
-  const updated: VentaPorPagar = {
-    ...order,
-    delivered_at: at,
-    delivered_by: user
-  }
-  await putValue(STORE_POR_PAGAR, updated)
-  emit('por-pagar-changed')
-  return updated
-}
-
-export const cancelPorPagar = async (id: string, user: string, at: string, reason: string): Promise<VentaPorPagar | null> => {
-  const db = await openDb()
-  return new Promise<VentaPorPagar | null>((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS, STORE_POR_PAGAR], 'readwrite')
-    const productStore = tx.objectStore(STORE_PRODUCTS)
-    const orderStore = tx.objectStore(STORE_POR_PAGAR)
-    const req = orderStore.get(id)
-
-    req.onsuccess = () => {
-      const order = req.result as VentaPorPagar | undefined
-      if (!order) {
-        resolve(null)
-        return
-      }
-      if (order.status === 'CANCELADO') {
-        resolve(order)
-        return
-      }
-
-      for (const item of order.items) {
-        const productReq = productStore.get(item.barcode)
-        productReq.onsuccess = () => {
-          const product = productReq.result as Product | undefined
-          if (!product || product.stock_snapshot === null) return
-          productStore.put({ ...product, stock_snapshot: product.stock_snapshot + item.qty_base })
-        }
-      }
-
-      const updated: VentaPorPagar = {
-        ...order,
-        status: 'CANCELADO',
-        canceled_at: at,
-        canceled_by: user,
-        cancellation_reason: reason || 'Cancelado por usuario'
-      }
-      orderStore.put(updated)
-      resolve(updated)
-    }
-
-    req.onerror = () => reject(req.error)
-    tx.onerror = () => reject(tx.error)
-    tx.oncomplete = () => {
-      emit('products-changed')
-      emit('por-pagar-changed')
-    }
-  })
 }

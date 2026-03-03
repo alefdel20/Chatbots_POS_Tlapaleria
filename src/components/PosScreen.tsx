@@ -1,12 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
-import { CartItem, FiscalData, PaymentMethod, Product, SalePayload } from '../lib/types'
+import { CartItem, PaymentMethod, Product, SalePayload } from '../lib/types'
 import { formatMoney, getRematePrice, nowIso, uuid } from '../lib/utils'
 import CartTable from './CartTable'
 import GranelModal from './GranelModal'
 import RemateModal from './RemateModal'
-import InvoicePromptModal from './InvoicePromptModal'
-import PorPagarModal from './PorPagarModal'
 
 interface PosScreenProps {
   products: Product[]
@@ -18,17 +16,9 @@ interface PosScreenProps {
   onContingency: () => void
   onUndo: () => void
   onRefreshCatalog: () => void
-  onOpenPorPagar: () => void
   onConfirmSale: (payload: SalePayload) => void
   onQuickAddProduct: (product: Product) => void
   onUpdateProduct: (product: Product) => Promise<void>
-  onConvertToPorPagar: (payload: {
-    cart: CartItem[]
-    customer_name: string
-    customer_phone: string
-    initial_payment: number
-    initial_payment_method: PaymentMethod
-  }) => Promise<{ folio: string; customer: string; total: number; balance: number }>
 }
 
 export default function PosScreen({
@@ -41,30 +31,23 @@ export default function PosScreen({
   onContingency,
   onUndo,
   onRefreshCatalog,
-  onOpenPorPagar,
   onConfirmSale,
   onQuickAddProduct,
-  onUpdateProduct,
-  onConvertToPorPagar
+  onUpdateProduct
 }: PosScreenProps) {
   const [barcode, setBarcode] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [payment, setPayment] = useState<PaymentMethod | null>(null)
-  const [fiscalData, setFiscalData] = useState<FiscalData>({ wants_invoice: false })
   const [alert, setAlert] = useState<string | null>(null)
   const [granelProduct, setGranelProduct] = useState<Product | null>(null)
+  const [remateProduct, setRemateProduct] = useState<Product | null>(null)
+  const [catalogSearch, setCatalogSearch] = useState('')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [quickAddAvailable, setQuickAddAvailable] = useState(false)
   const [quickName, setQuickName] = useState('')
   const [quickPrice, setQuickPrice] = useState('')
   const [quickUnit, setQuickUnit] = useState<Product['unit_base']>('pza')
   const [quickType, setQuickType] = useState<Product['type']>('PIEZA')
-  const [remateProduct, setRemateProduct] = useState<Product | null>(null)
-  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
-  const [pendingPayment, setPendingPayment] = useState<PaymentMethod>('EFECTIVO')
-  const [catalogSearch, setCatalogSearch] = useState('')
-  const [porPagarOpen, setPorPagarOpen] = useState(false)
-  const [porPagarSummary, setPorPagarSummary] = useState<{ folio: string; customer: string; total: number; balance: number } | null>(null)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   const editingRef = useRef(false)
@@ -194,33 +177,26 @@ export default function PosScreen({
     }
 
     addToCart(product, 1)
-
     setBarcode('')
     focusBarcode()
   }
 
-  const updateQty = (barcode: string, input: number | string) => {
+  const updateQty = (barcodeValue: string, input: number | string) => {
     setCart((prev) => {
       const raw = String(input ?? '').trim().replace(',', '.')
       const q = Number(raw)
 
       if (raw === '') return prev
       if (!Number.isFinite(q)) return prev
-      if (q <= 0) return prev.filter((it) => it.barcode !== barcode)
+      if (q <= 0) return prev.filter((it) => it.barcode !== barcodeValue)
 
       return prev.map((it) => {
-        if (it.barcode !== barcode) return it
+        if (it.barcode !== barcodeValue) return it
 
         const isPiece = it.display_unit === 'pza'
         const qty = isPiece ? Math.round(q) : q
-
         const packFactor = it.pack_factor ?? 1
-        const qty_base =
-          it.type === 'GRANEL'
-            ? qty
-            : it.type === 'PAQUETE'
-              ? qty * packFactor
-              : qty
+        const qty_base = it.type === 'GRANEL' ? qty : qty * packFactor
 
         return { ...it, qty, qty_base }
       })
@@ -246,7 +222,6 @@ export default function PosScreen({
       captured_at: nowIso(),
       user: currentUser,
       payment_method: payment,
-      fiscal_data: fiscalData,
       items: cart.map((item) => ({
         barcode: item.barcode,
         sku: item.sku,
@@ -267,7 +242,6 @@ export default function PosScreen({
     onConfirmSale(payload)
     setCart([])
     setPayment(null)
-    setFiscalData({ wants_invoice: false })
     setAlert(null)
     focusBarcode()
   }
@@ -324,28 +298,15 @@ export default function PosScreen({
           <span className="pill">Pendientes: {pendingCount}</span>
         </div>
         <div className="header-actions">
-          <button className="btn ghost" onClick={onRefreshCatalog}>
-            Actualizar catálogo
-          </button>
-          <button className="btn ghost" onClick={onOpenPorPagar}>
-            Por pagar
-          </button>
-          <button className="btn ghost" onClick={onSyncOpen}>
-            Sincronizar
-          </button>
-          <button className="btn warning" onClick={onContingency}>
-            Modo contingencia
-          </button>
-          <button className="btn danger" onClick={onUndo}>
-            ? Deshacer última venta
-          </button>
+          <button className="btn ghost" onClick={onRefreshCatalog}>Actualizar catálogo</button>
+          <button className="btn ghost" onClick={onSyncOpen}>Sincronizar</button>
+          <button className="btn warning" onClick={onContingency}>Modo contingencia</button>
+          <button className="btn danger" onClick={onUndo}>? Deshacer última venta</button>
         </div>
       </header>
 
       {!catalogAvailable && (
-        <div className="alert alert-error">
-          Catálogo no disponible, sincroniza cuando tengas internet.
-        </div>
+        <div className="alert alert-error">Catálogo no disponible, sincroniza cuando tengas internet.</div>
       )}
 
       <section className="scan-zone">
@@ -359,9 +320,7 @@ export default function PosScreen({
             onKeyDown={(e) => e.key === 'Enter' && handleScan()}
           />
         </div>
-        <button className="btn primary" onClick={handleScan}>
-          Agregar
-        </button>
+        <button className="btn primary" onClick={handleScan}>Agregar</button>
       </section>
 
       <div className="card">
@@ -371,15 +330,14 @@ export default function PosScreen({
             style={{ maxWidth: 320 }}
             value={catalogSearch}
             onChange={(e) => setCatalogSearch(e.target.value)}
-            placeholder="Buscar producto para remate"
+            placeholder="Buscar producto"
           />
         </div>
         <table className="cart-table">
           <thead>
             <tr>
               <th>Producto</th>
-              <th>Precio normal</th>
-              <th>Stock</th>
+              <th>Precio</th>
               <th>Remate</th>
               <th></th>
             </tr>
@@ -391,20 +349,15 @@ export default function PosScreen({
                 <tr key={product.barcode}>
                   <td>{product.name}</td>
                   <td>{formatMoney(product.price_gross)}</td>
-                  <td>{product.stock_snapshot ?? 'N/A'}</td>
                   <td>
                     {remate ? <span className="chip remate">{remate.label}: {formatMoney(remate.price)}</span> : <span className="muted">No</span>}
                   </td>
-                  <td>
-                    <button className="btn ghost" onClick={() => setRemateProduct(product)}>Marcar remate</button>
-                  </td>
+                  <td><button className="btn ghost" onClick={() => setRemateProduct(product)}>Marcar remate</button></td>
                 </tr>
               )
             })}
             {catalogPreview.length === 0 && (
-              <tr>
-                <td colSpan={5} className="muted center">Sin resultados</td>
-              </tr>
+              <tr><td colSpan={4} className="muted center">Sin resultados</td></tr>
             )}
           </tbody>
         </table>
@@ -413,11 +366,7 @@ export default function PosScreen({
       {alert && (
         <div className="alert alert-error">
           {alert}
-          {quickAddAvailable && (
-            <button className="btn ghost" onClick={() => setQuickAddOpen(true)}>
-              Alta rápida
-            </button>
-          )}
+          {quickAddAvailable && <button className="btn ghost" onClick={() => setQuickAddOpen(true)}>Alta rápida</button>}
         </div>
       )}
 
@@ -425,37 +374,21 @@ export default function PosScreen({
         <div className="card">
           <h3>Alta rápida</h3>
           <div className="row gap">
-            <input
-              placeholder="Nombre"
-              value={quickName}
-              onChange={(e) => setQuickName(e.target.value)}
-            />
-            <input
-              placeholder="Precio"
-              value={quickPrice}
-              onChange={(e) => setQuickPrice(e.target.value)}
-            />
-            <select
-              value={quickUnit}
-              onChange={(e) => setQuickUnit(e.target.value as Product['unit_base'])}
-            >
+            <input placeholder="Nombre" value={quickName} onChange={(e) => setQuickName(e.target.value)} />
+            <input placeholder="Precio" value={quickPrice} onChange={(e) => setQuickPrice(e.target.value)} />
+            <select value={quickUnit} onChange={(e) => setQuickUnit(e.target.value as Product['unit_base'])}>
               <option value="pza">pza</option>
               <option value="kg">kg</option>
               <option value="m">m</option>
               <option value="lt">lt</option>
               <option value="ml">ml</option>
             </select>
-            <select
-              value={quickType}
-              onChange={(e) => setQuickType(e.target.value as Product['type'])}
-            >
+            <select value={quickType} onChange={(e) => setQuickType(e.target.value as Product['type'])}>
               <option value="PIEZA">PIEZA</option>
               <option value="GRANEL">GRANEL</option>
               <option value="PAQUETE">PAQUETE</option>
             </select>
-            <button className="btn primary" onClick={handleQuickAdd}>
-              Guardar
-            </button>
+            <button className="btn primary" onClick={handleQuickAdd}>Guardar</button>
           </div>
         </div>
       )}
@@ -465,35 +398,12 @@ export default function PosScreen({
       <div className="totals">
         <div className="total">Total: {formatMoney(total)}</div>
         <div className="payment">
-          <button
-            className={payment === 'EFECTIVO' ? 'btn primary' : 'btn ghost'}
-            onClick={() => {
-              setPendingPayment('EFECTIVO')
-              setInvoiceModalOpen(true)
-            }}
-          >
-            Efectivo
-          </button>
-          <button
-            className={payment === 'TARJETA' ? 'btn primary' : 'btn ghost'}
-            onClick={() => {
-              setPendingPayment('TARJETA')
-              setInvoiceModalOpen(true)
-            }}
-          >
-            Tarjeta
-          </button>
+          <button className={payment === 'EFECTIVO' ? 'btn primary' : 'btn ghost'} onClick={() => setPayment('EFECTIVO')}>Efectivo</button>
+          <button className={payment === 'TARJETA' ? 'btn primary' : 'btn ghost'} onClick={() => setPayment('TARJETA')}>Tarjeta</button>
         </div>
         <div className="actions">
-          <button className="btn ghost" onClick={() => setCart([])}>
-            Cancelar
-          </button>
-          <button className="btn warning" onClick={() => setPorPagarOpen(true)} disabled={cart.length === 0}>
-            Convertir a Por Pagar
-          </button>
-          <button className="btn success" onClick={confirmSale}>
-            Confirmar venta
-          </button>
+          <button className="btn ghost" onClick={() => setCart([])}>Cancelar</button>
+          <button className="btn success" onClick={confirmSale}>Confirmar venta</button>
         </div>
       </div>
 
@@ -524,48 +434,6 @@ export default function PosScreen({
           setAlert('Remate actualizado.')
         }}
       />
-
-      <InvoicePromptModal
-        isOpen={invoiceModalOpen}
-        paymentLabel={pendingPayment === 'EFECTIVO' ? 'efectivo' : 'tarjeta'}
-        initial={fiscalData}
-        onClose={() => setInvoiceModalOpen(false)}
-        onConfirm={(data) => {
-          setFiscalData(data)
-          setPayment(pendingPayment)
-          setInvoiceModalOpen(false)
-        }}
-      />
-
-      <PorPagarModal
-        isOpen={porPagarOpen}
-        cart={cart}
-        onClose={() => setPorPagarOpen(false)}
-        onConfirm={async (data) => {
-          const summary = await onConvertToPorPagar({ cart, ...data })
-          setPorPagarSummary(summary)
-          setPorPagarOpen(false)
-          setCart([])
-          setPayment(null)
-          setFiscalData({ wants_invoice: false })
-          setAlert(null)
-        }}
-      />
-
-      {porPagarSummary && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h2>Por pagar creado</h2>
-            <p>Folio: <span className="strong">{porPagarSummary.folio}</span></p>
-            <p>Cliente: {porPagarSummary.customer}</p>
-            <p>Total: {formatMoney(porPagarSummary.total)}</p>
-            <p>Saldo: {formatMoney(porPagarSummary.balance)}</p>
-            <div className="modal-actions">
-              <button className="btn primary" onClick={() => setPorPagarSummary(null)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

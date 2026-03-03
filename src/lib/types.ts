@@ -41,11 +41,20 @@ export interface CartItem {
 
 export type PaymentMethod = 'EFECTIVO' | 'TARJETA'
 
+export interface FiscalData {
+  wants_invoice: boolean
+  rfc?: string
+  razon_social?: string
+  email?: string
+  cp?: string
+}
+
 export interface SalePayload {
   local_id: string
   captured_at: string
   user: string
   payment_method: PaymentMethod
+  fiscal_data?: FiscalData
   items: Array<{
     barcode: string
     sku: string

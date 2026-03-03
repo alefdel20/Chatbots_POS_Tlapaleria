@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+ï»¿import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
-import { CartItem, PaymentMethod, Product, SalePayload } from '../lib/types'
+import { CartItem, FiscalData, PaymentMethod, Product, SalePayload } from '../lib/types'
 import { formatMoney, getRematePrice, nowIso, uuid } from '../lib/utils'
 import CartTable from './CartTable'
 import GranelModal from './GranelModal'
 import RemateModal from './RemateModal'
+import InvoicePromptModal from './InvoicePromptModal'
 
 interface PosScreenProps {
   products: Product[]
@@ -38,6 +39,7 @@ export default function PosScreen({
   const [barcode, setBarcode] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [payment, setPayment] = useState<PaymentMethod | null>(null)
+  const [fiscalData, setFiscalData] = useState<FiscalData>({ wants_invoice: false })
   const [alert, setAlert] = useState<string | null>(null)
   const [granelProduct, setGranelProduct] = useState<Product | null>(null)
   const [remateProduct, setRemateProduct] = useState<Product | null>(null)
@@ -48,6 +50,8 @@ export default function PosScreen({
   const [quickPrice, setQuickPrice] = useState('')
   const [quickUnit, setQuickUnit] = useState<Product['unit_base']>('pza')
   const [quickType, setQuickType] = useState<Product['type']>('PIEZA')
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
+  const [pendingPayment, setPendingPayment] = useState<PaymentMethod>('EFECTIVO')
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   const editingRef = useRef(false)
@@ -209,11 +213,11 @@ export default function PosScreen({
 
   const confirmSale = () => {
     if (cart.length === 0) {
-      setAlert('Carrito vacío.')
+      setAlert('Carrito vacio.')
       return
     }
     if (!payment) {
-      setAlert('Selecciona método de pago.')
+      setAlert('Selecciona metodo de pago.')
       return
     }
 
@@ -222,6 +226,7 @@ export default function PosScreen({
       captured_at: nowIso(),
       user: currentUser,
       payment_method: payment,
+      fiscal_data: fiscalData,
       items: cart.map((item) => ({
         barcode: item.barcode,
         sku: item.sku,
@@ -242,19 +247,20 @@ export default function PosScreen({
     onConfirmSale(payload)
     setCart([])
     setPayment(null)
+    setFiscalData({ wants_invoice: false })
     setAlert(null)
     focusBarcode()
   }
 
   const handleQuickAdd = () => {
     if (!quickName.trim()) {
-      setAlert('Nombre requerido en alta rápida.')
+      setAlert('Nombre requerido en alta rapida.')
       return
     }
 
     const price = Number.parseFloat(quickPrice.replace(',', '.'))
     if (!Number.isFinite(price) || price <= 0) {
-      setAlert('Precio inválido.')
+      setAlert('Precio invalido.')
       return
     }
 
@@ -298,15 +304,15 @@ export default function PosScreen({
           <span className="pill">Pendientes: {pendingCount}</span>
         </div>
         <div className="header-actions">
-          <button className="btn ghost" onClick={onRefreshCatalog}>Actualizar catálogo</button>
+          <button className="btn ghost" onClick={onRefreshCatalog}>Actualizar catalogo</button>
           <button className="btn ghost" onClick={onSyncOpen}>Sincronizar</button>
           <button className="btn warning" onClick={onContingency}>Modo contingencia</button>
-          <button className="btn danger" onClick={onUndo}>? Deshacer última venta</button>
+          <button className="btn danger" onClick={onUndo}>Deshacer ultima venta</button>
         </div>
       </header>
 
       {!catalogAvailable && (
-        <div className="alert alert-error">Catálogo no disponible, sincroniza cuando tengas internet.</div>
+        <div className="alert alert-error">Catalogo no disponible, sincroniza cuando tengas internet.</div>
       )}
 
       <section className="scan-zone">
@@ -325,7 +331,7 @@ export default function PosScreen({
 
       <div className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h3>Catálogo rápido</h3>
+          <h3>Catalogo rapido</h3>
           <input
             style={{ maxWidth: 320 }}
             value={catalogSearch}
@@ -366,13 +372,13 @@ export default function PosScreen({
       {alert && (
         <div className="alert alert-error">
           {alert}
-          {quickAddAvailable && <button className="btn ghost" onClick={() => setQuickAddOpen(true)}>Alta rápida</button>}
+          {quickAddAvailable && <button className="btn ghost" onClick={() => setQuickAddOpen(true)}>Alta rapida</button>}
         </div>
       )}
 
       {quickAddOpen && (
         <div className="card">
-          <h3>Alta rápida</h3>
+          <h3>Alta rapida</h3>
           <div className="row gap">
             <input placeholder="Nombre" value={quickName} onChange={(e) => setQuickName(e.target.value)} />
             <input placeholder="Precio" value={quickPrice} onChange={(e) => setQuickPrice(e.target.value)} />
@@ -398,8 +404,24 @@ export default function PosScreen({
       <div className="totals">
         <div className="total">Total: {formatMoney(total)}</div>
         <div className="payment">
-          <button className={payment === 'EFECTIVO' ? 'btn primary' : 'btn ghost'} onClick={() => setPayment('EFECTIVO')}>Efectivo</button>
-          <button className={payment === 'TARJETA' ? 'btn primary' : 'btn ghost'} onClick={() => setPayment('TARJETA')}>Tarjeta</button>
+          <button
+            className={payment === 'EFECTIVO' ? 'btn primary' : 'btn ghost'}
+            onClick={() => {
+              setPendingPayment('EFECTIVO')
+              setInvoiceModalOpen(true)
+            }}
+          >
+            Efectivo
+          </button>
+          <button
+            className={payment === 'TARJETA' ? 'btn primary' : 'btn ghost'}
+            onClick={() => {
+              setPendingPayment('TARJETA')
+              setInvoiceModalOpen(true)
+            }}
+          >
+            Tarjeta
+          </button>
         </div>
         <div className="actions">
           <button className="btn ghost" onClick={() => setCart([])}>Cancelar</button>
@@ -432,6 +454,18 @@ export default function PosScreen({
           await onUpdateProduct(product)
           setRemateProduct(null)
           setAlert('Remate actualizado.')
+        }}
+      />
+
+      <InvoicePromptModal
+        isOpen={invoiceModalOpen}
+        paymentLabel={pendingPayment === 'EFECTIVO' ? 'Efectivo' : 'Tarjeta'}
+        initial={fiscalData}
+        onClose={() => setInvoiceModalOpen(false)}
+        onConfirm={(data) => {
+          setFiscalData(data)
+          setPayment(pendingPayment)
+          setInvoiceModalOpen(false)
         }}
       />
     </div>

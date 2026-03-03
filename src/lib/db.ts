@@ -269,7 +269,14 @@ export const createPorPagarOrder = async (order: PorPagarOrder): Promise<void> =
 
 export const addPorPagarPayment = async (
   orderId: string,
-  payment: { id: string; amount: number; method: 'EFECTIVO' | 'TARJETA'; captured_at: string }
+  payment: {
+    id: string
+    amount: number
+    method: 'EFECTIVO' | 'TARJETA'
+    captured_at: string
+    received_amount?: number
+    change_amount?: number
+  }
 ): Promise<void> => {
   const db = await openDb()
   await new Promise<void>((resolve, reject) => {

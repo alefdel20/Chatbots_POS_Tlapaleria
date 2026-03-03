@@ -5,7 +5,13 @@ import { formatMoney, toNumber } from '../lib/utils'
 interface PorPagarScreenProps {
   orders: PorPagarOrder[]
   onBack: () => void
-  onRegisterAbono: (orderId: string, amount: number, method: PaymentMethod) => Promise<void>
+  onRegisterAbono: (
+    orderId: string,
+    amount: number,
+    method: PaymentMethod,
+    receivedAmount?: number,
+    changeAmount?: number
+  ) => Promise<void>
   onCancel: (orderId: string) => Promise<void>
   onMarkDelivered: (orderId: string) => Promise<void>
 }
@@ -22,6 +28,7 @@ export default function PorPagarScreen({
   const [abonoOpen, setAbonoOpen] = useState(false)
   const [abonoAmount, setAbonoAmount] = useState('')
   const [abonoMethod, setAbonoMethod] = useState<PaymentMethod>('EFECTIVO')
+  const [abonoReceived, setAbonoReceived] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
@@ -46,10 +53,23 @@ export default function PorPagarScreen({
       setError('Monto de abono invalido.')
       return
     }
+    const receivedAmount = toNumber(abonoReceived)
+    const changeAmount = Math.max(0, Number((receivedAmount - amount).toFixed(2)))
+    if (abonoMethod === 'EFECTIVO' && receivedAmount < amount) {
+      setError('Recibido insuficiente para cubrir el abono.')
+      return
+    }
     setError(null)
-    await onRegisterAbono(selected.id, amount, abonoMethod)
+    await onRegisterAbono(
+      selected.id,
+      amount,
+      abonoMethod,
+      abonoMethod === 'EFECTIVO' ? receivedAmount : undefined,
+      abonoMethod === 'EFECTIVO' ? changeAmount : undefined
+    )
     setAbonoAmount('')
     setAbonoMethod('EFECTIVO')
+    setAbonoReceived('')
     setAbonoOpen(false)
   }
 
@@ -163,7 +183,14 @@ export default function PorPagarScreen({
               {selected.payment_history.map((abono) => (
                 <div key={abono.id} className="pending-item">
                   <div>{new Date(abono.captured_at).toLocaleString()}</div>
-                  <div>{abono.method}</div>
+                  <div>
+                    {abono.method}
+                    {abono.received_amount !== undefined && (
+                      <div className="muted">
+                        Recibido: {formatMoney(abono.received_amount)} / Cambio: {formatMoney(abono.change_amount ?? 0)}
+                      </div>
+                    )}
+                  </div>
                   <div>{formatMoney(abono.amount)}</div>
                 </div>
               ))}
@@ -187,6 +214,15 @@ export default function PorPagarScreen({
               <option value="EFECTIVO">Efectivo</option>
               <option value="TARJETA">Tarjeta</option>
             </select>
+            {abonoMethod === 'EFECTIVO' && (
+              <>
+                <label>Recibido</label>
+                <input value={abonoReceived} onChange={(e) => setAbonoReceived(e.target.value)} />
+                <div className="muted">
+                  Cambio: {formatMoney(Math.max(0, toNumber(abonoReceived) - toNumber(abonoAmount)))}
+                </div>
+              </>
+            )}
 
             <div className="modal-actions">
               <button className="btn ghost" onClick={() => setAbonoOpen(false)}>Cancelar</button>

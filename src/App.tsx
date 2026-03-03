@@ -161,8 +161,8 @@ export default function App() {
           posId: currentUser,
           SUBTOTAL: totalVenta,
           METODO_PAGO: payload.payment_method,
-          RECIBIDO: totalVenta,
-          CAMBIO: 0,
+          RECIBIDO: payload.amount_received ?? totalVenta,
+          CAMBIO: payload.change_amount ?? 0,
           factura: payload.fiscal_data ?? { wants_invoice: false },
           items: payload.items
         })
@@ -373,15 +373,17 @@ export default function App() {
       <PorPagarScreen
         orders={porPagarOrders}
         onBack={() => setScreen('pos')}
-        onRegisterAbono={async (orderId, amount, method) => {
-          await addPorPagarPayment(orderId, {
-            id: uuid(),
-            amount,
-            method,
-            captured_at: nowIso()
-          })
-          setPorPagarOrders(await getPorPagarList())
-        }}
+          onRegisterAbono={async (orderId, amount, method, receivedAmount, changeAmount) => {
+            await addPorPagarPayment(orderId, {
+              id: uuid(),
+              amount,
+              method,
+              captured_at: nowIso(),
+              received_amount: receivedAmount,
+              change_amount: changeAmount
+            })
+            setPorPagarOrders(await getPorPagarList())
+          }}
         onCancel={async (orderId) => {
           await cancelPorPagarOrder(orderId, nowIso())
           setPorPagarOrders(await getPorPagarList())

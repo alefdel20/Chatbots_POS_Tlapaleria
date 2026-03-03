@@ -1,7 +1,7 @@
 ﻿import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { CartItem, FiscalData, PaymentMethod, Product, SalePayload } from '../lib/types'
-import { formatMoney, getRematePrice, nowIso, uuid } from '../lib/utils'
+import { formatMoney, getRematePrice, nowIso, toNumber, uuid } from '../lib/utils'
 import CartTable from './CartTable'
 import GranelModal from './GranelModal'
 import RemateModal from './RemateModal'
@@ -65,6 +65,7 @@ export default function PosScreen({
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
   const [pendingPayment, setPendingPayment] = useState<PaymentMethod>('EFECTIVO')
   const [porPagarOpen, setPorPagarOpen] = useState(false)
+  const [cashReceivedText, setCashReceivedText] = useState('')
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   const editingRef = useRef(false)
@@ -73,6 +74,8 @@ export default function PosScreen({
     () => cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0),
     [cart]
   )
+  const cashReceived = toNumber(cashReceivedText)
+  const cashChange = payment === 'EFECTIVO' ? Math.max(0, Number((cashReceived - total).toFixed(2))) : 0
 
   const scanSuggestions = useMemo(() => {
     const q = barcode.trim().toLowerCase()
@@ -261,6 +264,10 @@ export default function PosScreen({
       setAlert('Selecciona metodo de pago.')
       return
     }
+    if (payment === 'EFECTIVO' && cashReceived < total) {
+      setAlert('Monto recibido insuficiente para pago en efectivo.')
+      return
+    }
 
     const payload: SalePayload = {
       local_id: uuid(),
@@ -268,6 +275,8 @@ export default function PosScreen({
       user: currentUser,
       sale_type: 'VENTA',
       payment_method: payment,
+      amount_received: payment === 'EFECTIVO' ? cashReceived : undefined,
+      change_amount: payment === 'EFECTIVO' ? cashChange : undefined,
       fiscal_data: fiscalData,
       items: cart.map((item) => ({
         barcode: item.barcode,
@@ -289,6 +298,7 @@ export default function PosScreen({
     onConfirmSale(payload)
     setCart([])
     setPayment(null)
+    setCashReceivedText('')
     setFiscalData({ wants_invoice: false })
     setAlert(null)
     focusBarcode()
@@ -480,11 +490,23 @@ export default function PosScreen({
             onClick={() => {
               setPendingPayment('TARJETA')
               setInvoiceModalOpen(true)
+              setCashReceivedText('')
             }}
           >
             Tarjeta
           </button>
         </div>
+        {payment === 'EFECTIVO' && (
+          <div className="card cash-box">
+            <label>Recibido</label>
+            <input
+              value={cashReceivedText}
+              onChange={(e) => setCashReceivedText(e.target.value)}
+              placeholder="0.00"
+            />
+            <div className="muted">Cambio: {formatMoney(cashChange)}</div>
+          </div>
+        )}
         <div className="actions">
           <button className="btn ghost" onClick={() => setCart([])}>Cancelar</button>
           <button className="btn warning" onClick={() => setPorPagarOpen(true)} disabled={cart.length === 0}>
@@ -530,6 +552,7 @@ export default function PosScreen({
         onConfirm={(data) => {
           setFiscalData(data)
           setPayment(pendingPayment)
+          if (pendingPayment !== 'EFECTIVO') setCashReceivedText('')
           setInvoiceModalOpen(false)
         }}
       />

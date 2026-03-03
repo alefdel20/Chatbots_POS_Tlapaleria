@@ -57,6 +57,8 @@ export interface SalePayload {
   user: string
   sale_type?: SaleType
   payment_method: PaymentMethod
+  amount_received?: number
+  change_amount?: number
   fiscal_data?: FiscalData
   items: Array<{
     barcode: string
@@ -103,6 +105,8 @@ export interface PorPagarOrder {
     amount: number
     method: PaymentMethod
     captured_at: string
+    received_amount?: number
+    change_amount?: number
   }>
   canceled_at: string | null
   delivered_at: string | null

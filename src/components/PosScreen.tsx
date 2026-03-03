@@ -8,6 +8,8 @@ import RemateModal from './RemateModal'
 import InvoicePromptModal from './InvoicePromptModal'
 import PorPagarModal from './PorPagarModal'
 
+const isLikelyBarcode = (value: string) => /^[0-9]{8,}$/.test(value.trim())
+
 interface PosScreenProps {
   products: Product[]
   catalogAvailable: boolean
@@ -71,6 +73,16 @@ export default function PosScreen({
     () => cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0),
     [cart]
   )
+
+  const scanSuggestions = useMemo(() => {
+    const q = barcode.trim().toLowerCase()
+    if (!q || isLikelyBarcode(q)) return []
+    return products
+      .filter((p) =>
+        p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+      )
+      .slice(0, 8)
+  }, [barcode, products])
 
   const catalogPreview = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase()
@@ -166,6 +178,10 @@ export default function PosScreen({
     const local = products.find((p) => p.barcode === code)
     let product: Product | undefined = local
 
+    if (!product && !isLikelyBarcode(code) && scanSuggestions.length > 0) {
+      product = scanSuggestions[0]
+    }
+
     if (!product && online) {
       try {
         product = (await api.lookupProduct(code)) ?? undefined
@@ -191,6 +207,20 @@ export default function PosScreen({
       return
     }
 
+    addToCart(product, 1)
+    setBarcode('')
+    focusBarcode()
+  }
+
+  const addSuggestionToCart = (product: Product) => {
+    setAlert(null)
+    setQuickAddAvailable(false)
+    setQuickAddOpen(false)
+    if (product.type === 'GRANEL') {
+      setGranelProduct(product)
+      setBarcode('')
+      return
+    }
     addToCart(product, 1)
     setBarcode('')
     focusBarcode()
@@ -330,7 +360,7 @@ export default function PosScreen({
 
       <section className="scan-zone">
         <div>
-          <label>Barcode</label>
+          <label>Barcode / Nombre / SKU</label>
           <input
             ref={inputRef}
             autoFocus
@@ -338,6 +368,22 @@ export default function PosScreen({
             onChange={(e) => setBarcode(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleScan()}
           />
+          {scanSuggestions.length > 0 && (
+            <div className="suggestions">
+              {scanSuggestions.map((item) => (
+                <button
+                  key={item.barcode}
+                  className="suggestion-item"
+                  onClick={() => addSuggestionToCart(item)}
+                >
+                  <span>{item.name}</span>
+                  <span className="muted">{item.sku}</span>
+                  <span>{formatMoney(item.price_gross)}</span>
+                  <span className="muted">Stock: {item.stock_snapshot ?? 'N/A'}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <button className="btn primary" onClick={handleScan}>Agregar</button>
       </section>

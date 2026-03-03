@@ -404,7 +404,7 @@ export default function PosScreen({
               <th>Producto</th>
               <th>Precio</th>
               <th>Remate</th>
-              <th></th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -417,7 +417,10 @@ export default function PosScreen({
                   <td>
                     {remate ? <span className="chip remate">{remate.label}: {formatMoney(remate.price)}</span> : <span className="muted">No</span>}
                   </td>
-                  <td><button className="btn ghost" onClick={() => setRemateProduct(product)}>Marcar remate</button></td>
+                  <td className="row">
+                    <button className="btn primary" onClick={() => addSuggestionToCart(product)}>Agregar</button>
+                    <button className="btn ghost" onClick={() => setRemateProduct(product)}>Marcar remate</button>
+                  </td>
                 </tr>
               )
             })}

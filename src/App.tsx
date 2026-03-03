@@ -293,103 +293,113 @@ export default function App() {
     setPending(await getPendingQueue())
   }
 
+  // ✅ Renderiza SOLO una pantalla a la vez (evita “flash” / doble UI)
+  let content: JSX.Element | null = null
+
+  if (screen === 'pos') {
+    content = (
+      <PosScreen
+        products={products}
+        catalogAvailable={catalogAvailable}
+        online={online}
+        pendingCount={pendingCount}
+        currentUser={currentUser}
+        onSyncOpen={() => setSyncOpen(true)}
+        onContingency={() => requestAdmin(() => setScreen('contingency'))}
+        onUndo={() => requestAdmin(handleUndoRequest)}
+        onRefreshCatalog={() => requestAdmin(refreshCatalog)}
+        onOpenPorPagar={() => setScreen('por_pagar')}
+        onConfirmSale={handleConfirmSale}
+        onQuickAddProduct={async (product) => {
+          await upsertProducts([product])
+          setProducts(await getProducts())
+        }}
+        onUpdateProduct={async (product) => {
+          await upsertProducts([product])
+          setProducts(await getProducts())
+        }}
+        onConvertToPorPagar={async ({ cart, customer_name, customer_phone, anticipo }) => {
+          const total = Number(cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0).toFixed(2))
+          const normalizedAnticipo = Number(Math.max(0, Math.min(total, anticipo)).toFixed(2))
+          const balance = Number((total - normalizedAnticipo).toFixed(2))
+
+          const order: PorPagarOrder = {
+            id: uuid(),
+            folio: await nextPorPagarFolio(),
+            sale_type: 'POR_PAGAR',
+            customer_name,
+            customer_phone,
+            items: cart.map((item) => ({
+              barcode: item.barcode,
+              sku: item.sku,
+              name: item.name,
+              unit_base: item.unit_base,
+              type: item.type,
+              pack_factor: item.pack_factor,
+              qty: item.qty,
+              qty_base: item.qty_base,
+              price_gross: item.price_gross
+            })),
+            total,
+            anticipo: normalizedAnticipo,
+            balance,
+            status: balance <= 0 ? 'LIQUIDADO' : 'ABIERTO',
+            payment_history:
+              normalizedAnticipo > 0
+                ? [{ id: uuid(), amount: normalizedAnticipo, method: 'EFECTIVO', captured_at: nowIso() }]
+                : [],
+            canceled_at: null,
+            delivered_at: null,
+            created_at: nowIso()
+          }
+
+          await createPorPagarOrder(order)
+          setPorPagarOrders(await getPorPagarList())
+          setProducts(await getProducts())
+          setMessage(`Apartado ${order.folio} creado.`)
+        }}
+      />
+    )
+  } else if (screen === 'contingency') {
+    content = (
+      <ContingencyScreen
+        products={products}
+        onBack={() => setScreen('pos')}
+        onSave={handleSaveBatch}
+      />
+    )
+  } else if (screen === 'por_pagar') {
+    content = (
+      <PorPagarScreen
+        orders={porPagarOrders}
+        onBack={() => setScreen('pos')}
+        onRegisterAbono={async (orderId, amount, method) => {
+          await addPorPagarPayment(orderId, {
+            id: uuid(),
+            amount,
+            method,
+            captured_at: nowIso()
+          })
+          setPorPagarOrders(await getPorPagarList())
+        }}
+        onCancel={async (orderId) => {
+          await cancelPorPagarOrder(orderId, nowIso())
+          setPorPagarOrders(await getPorPagarList())
+          setProducts(await getProducts())
+        }}
+        onMarkDelivered={async (orderId) => {
+          await markPorPagarDelivered(orderId, nowIso())
+          setPorPagarOrders(await getPorPagarList())
+        }}
+      />
+    )
+  }
+
   return (
     <div className="app">
       {message && <div className="toast">{message}</div>}
-      {screen === 'pos' && (
-        <PosScreen
-          products={products}
-          catalogAvailable={catalogAvailable}
-          online={online}
-          pendingCount={pendingCount}
-          currentUser={currentUser}
-          onSyncOpen={() => setSyncOpen(true)}
-          onContingency={() => requestAdmin(() => setScreen('contingency'))}
-          onUndo={() => requestAdmin(handleUndoRequest)}
-          onRefreshCatalog={() => requestAdmin(refreshCatalog)}
-          onOpenPorPagar={() => setScreen('por_pagar')}
-          onConfirmSale={handleConfirmSale}
-          onQuickAddProduct={async (product) => {
-            await upsertProducts([product])
-            setProducts(await getProducts())
-          }}
-          onUpdateProduct={async (product) => {
-            await upsertProducts([product])
-            setProducts(await getProducts())
-          }}
-          onConvertToPorPagar={async ({ cart, customer_name, customer_phone, anticipo }) => {
-            const total = Number(cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0).toFixed(2))
-            const normalizedAnticipo = Number(Math.max(0, Math.min(total, anticipo)).toFixed(2))
-            const balance = Number((total - normalizedAnticipo).toFixed(2))
-            const order: PorPagarOrder = {
-              id: uuid(),
-              folio: await nextPorPagarFolio(),
-              sale_type: 'POR_PAGAR',
-              customer_name,
-              customer_phone,
-              items: cart.map((item) => ({
-                barcode: item.barcode,
-                sku: item.sku,
-                name: item.name,
-                unit_base: item.unit_base,
-                type: item.type,
-                pack_factor: item.pack_factor,
-                qty: item.qty,
-                qty_base: item.qty_base,
-                price_gross: item.price_gross
-              })),
-              total,
-              anticipo: normalizedAnticipo,
-              balance,
-              status: balance <= 0 ? 'LIQUIDADO' : 'ABIERTO',
-              payment_history: normalizedAnticipo > 0
-                ? [{ id: uuid(), amount: normalizedAnticipo, method: 'EFECTIVO', captured_at: nowIso() }]
-                : [],
-              canceled_at: null,
-              delivered_at: null,
-              created_at: nowIso()
-            }
 
-            await createPorPagarOrder(order)
-            setPorPagarOrders(await getPorPagarList())
-            setProducts(await getProducts())
-            setMessage(`Apartado ${order.folio} creado.`)
-          }}
-        />
-      )}
-
-      {screen === 'contingency' && (
-        <ContingencyScreen
-          products={products}
-          onBack={() => setScreen('pos')}
-          onSave={handleSaveBatch}
-        />
-      )}
-
-      {screen === 'por_pagar' && (
-        <PorPagarScreen
-          orders={porPagarOrders}
-          onBack={() => setScreen('pos')}
-          onRegisterAbono={async (orderId, amount, method) => {
-            await addPorPagarPayment(orderId, {
-              id: uuid(),
-              amount,
-              method,
-              captured_at: nowIso()
-            })
-            setPorPagarOrders(await getPorPagarList())
-          }}
-          onCancel={async (orderId) => {
-            await cancelPorPagarOrder(orderId, nowIso())
-            setPorPagarOrders(await getPorPagarList())
-            setProducts(await getProducts())
-          }}
-          onMarkDelivered={async (orderId) => {
-            await markPorPagarDelivered(orderId, nowIso())
-            setPorPagarOrders(await getPorPagarList())
-          }}
-        />
-      )}
+      {content}
 
       <SyncManager
         isOpen={syncOpen}

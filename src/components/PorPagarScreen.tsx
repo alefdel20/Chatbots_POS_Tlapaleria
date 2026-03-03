@@ -1,15 +1,28 @@
 ﻿import { useMemo, useState } from 'react'
-import { PorPagarOrder } from '../lib/types'
-import { formatMoney } from '../lib/utils'
+import { PaymentMethod, PorPagarOrder } from '../lib/types'
+import { formatMoney, toNumber } from '../lib/utils'
 
 interface PorPagarScreenProps {
   orders: PorPagarOrder[]
   onBack: () => void
+  onRegisterAbono: (orderId: string, amount: number, method: PaymentMethod) => Promise<void>
+  onCancel: (orderId: string) => Promise<void>
+  onMarkDelivered: (orderId: string) => Promise<void>
 }
 
-export default function PorPagarScreen({ orders, onBack }: PorPagarScreenProps) {
+export default function PorPagarScreen({
+  orders,
+  onBack,
+  onRegisterAbono,
+  onCancel,
+  onMarkDelivered
+}: PorPagarScreenProps) {
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [abonoOpen, setAbonoOpen] = useState(false)
+  const [abonoAmount, setAbonoAmount] = useState('')
+  const [abonoMethod, setAbonoMethod] = useState<PaymentMethod>('EFECTIVO')
+  const [error, setError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -26,12 +39,26 @@ export default function PorPagarScreen({ orders, onBack }: PorPagarScreenProps) 
     return filtered[0] ?? null
   }, [orders, filtered, selectedId])
 
+  const submitAbono = async () => {
+    if (!selected) return
+    const amount = toNumber(abonoAmount)
+    if (amount <= 0) {
+      setError('Monto de abono invalido.')
+      return
+    }
+    setError(null)
+    await onRegisterAbono(selected.id, amount, abonoMethod)
+    setAbonoAmount('')
+    setAbonoMethod('EFECTIVO')
+    setAbonoOpen(false)
+  }
+
   return (
     <div className="screen">
       <div className="screen-header">
         <div>
           <h1>Por pagar</h1>
-          <div className="muted">Apartados abiertos</div>
+          <div className="muted">Apartados</div>
         </div>
         <button className="btn ghost" onClick={onBack}>Volver</button>
       </div>
@@ -57,7 +84,7 @@ export default function PorPagarScreen({ orders, onBack }: PorPagarScreenProps) 
                 <div>
                   <div>Total: {formatMoney(order.total)}</div>
                   <div>Saldo: {formatMoney(order.balance)}</div>
-                  <div className="status pending_sync">{order.status}</div>
+                  <div className={`status status-${order.status.toLowerCase()}`}>{order.status}</div>
                 </div>
               </div>
             ))}
@@ -75,8 +102,39 @@ export default function PorPagarScreen({ orders, onBack }: PorPagarScreenProps) 
               <div>Total: {formatMoney(selected.total)}</div>
               <div>Anticipo: {formatMoney(selected.anticipo)}</div>
               <div className="strong">Saldo: {formatMoney(selected.balance)}</div>
-              <div>Estatus: {selected.status}</div>
+              <div>
+                Estatus: <span className={`status status-${selected.status.toLowerCase()}`}>{selected.status}</span>
+              </div>
               <div className="muted">Creado: {new Date(selected.created_at).toLocaleString()}</div>
+              {selected.canceled_at && <div className="muted">Cancelado: {new Date(selected.canceled_at).toLocaleString()}</div>}
+              {selected.delivered_at && <div className="muted">Entregado: {new Date(selected.delivered_at).toLocaleString()}</div>}
+
+              <div className="row gap">
+                <button
+                  className="btn primary"
+                  disabled={selected.status !== 'ABIERTO'}
+                  onClick={() => {
+                    setAbonoOpen(true)
+                    setError(null)
+                  }}
+                >
+                  Registrar abono
+                </button>
+                <button
+                  className="btn danger"
+                  disabled={selected.status !== 'ABIERTO'}
+                  onClick={() => onCancel(selected.id)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn success"
+                  disabled={selected.status !== 'LIQUIDADO'}
+                  onClick={() => onMarkDelivered(selected.id)}
+                >
+                  Marcar entregado
+                </button>
+              </div>
 
               <h4>Items</h4>
               <table className="cart-table">
@@ -99,10 +157,44 @@ export default function PorPagarScreen({ orders, onBack }: PorPagarScreenProps) 
                   ))}
                 </tbody>
               </table>
+
+              <h4>Historial de abonos</h4>
+              {selected.payment_history.length === 0 && <div className="muted">Sin abonos registrados.</div>}
+              {selected.payment_history.map((abono) => (
+                <div key={abono.id} className="pending-item">
+                  <div>{new Date(abono.captured_at).toLocaleString()}</div>
+                  <div>{abono.method}</div>
+                  <div>{formatMoney(abono.amount)}</div>
+                </div>
+              ))}
             </>
           )}
+          {error && <div className="alert alert-error">{error}</div>}
         </div>
       </div>
+
+      {abonoOpen && selected && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Registrar abono</h2>
+            <p className="muted">Fecha: {new Date().toLocaleString()}</p>
+
+            <label>Monto</label>
+            <input value={abonoAmount} onChange={(e) => setAbonoAmount(e.target.value)} />
+
+            <label>Metodo</label>
+            <select value={abonoMethod} onChange={(e) => setAbonoMethod(e.target.value as PaymentMethod)}>
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TARJETA">Tarjeta</option>
+            </select>
+
+            <div className="modal-actions">
+              <button className="btn ghost" onClick={() => setAbonoOpen(false)}>Cancelar</button>
+              <button className="btn primary" onClick={submitAbono}>Guardar abono</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

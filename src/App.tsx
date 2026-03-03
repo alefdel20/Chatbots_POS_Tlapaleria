@@ -5,7 +5,9 @@ import PorPagarScreen from './components/PorPagarScreen'
 import PinModal from './components/PinModal'
 import SyncManager from './components/SyncManager'
 import {
+  addPorPagarPayment,
   addPendingQueueItem,
+  cancelPorPagarOrder,
   createPorPagarOrder,
   dbEvents,
   getMeta,
@@ -15,6 +17,7 @@ import {
   getProducts,
   getSettings,
   initDb,
+  markPorPagarDelivered,
   nextPorPagarFolio,
   setLastSale,
   setMeta,
@@ -317,6 +320,7 @@ export default function App() {
           onConvertToPorPagar={async ({ cart, customer_name, customer_phone, anticipo }) => {
             const total = Number(cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0).toFixed(2))
             const normalizedAnticipo = Number(Math.max(0, Math.min(total, anticipo)).toFixed(2))
+            const balance = Number((total - normalizedAnticipo).toFixed(2))
             const order: PorPagarOrder = {
               id: uuid(),
               folio: await nextPorPagarFolio(),
@@ -336,8 +340,13 @@ export default function App() {
               })),
               total,
               anticipo: normalizedAnticipo,
-              balance: Number((total - normalizedAnticipo).toFixed(2)),
-              status: 'ABIERTO',
+              balance,
+              status: balance <= 0 ? 'LIQUIDADO' : 'ABIERTO',
+              payment_history: normalizedAnticipo > 0
+                ? [{ id: uuid(), amount: normalizedAnticipo, method: 'EFECTIVO', captured_at: nowIso() }]
+                : [],
+              canceled_at: null,
+              delivered_at: null,
               created_at: nowIso()
             }
 
@@ -361,6 +370,24 @@ export default function App() {
         <PorPagarScreen
           orders={porPagarOrders}
           onBack={() => setScreen('pos')}
+          onRegisterAbono={async (orderId, amount, method) => {
+            await addPorPagarPayment(orderId, {
+              id: uuid(),
+              amount,
+              method,
+              captured_at: nowIso()
+            })
+            setPorPagarOrders(await getPorPagarList())
+          }}
+          onCancel={async (orderId) => {
+            await cancelPorPagarOrder(orderId, nowIso())
+            setPorPagarOrders(await getPorPagarList())
+            setProducts(await getProducts())
+          }}
+          onMarkDelivered={async (orderId) => {
+            await markPorPagarDelivered(orderId, nowIso())
+            setPorPagarOrders(await getPorPagarList())
+          }}
         />
       )}
 

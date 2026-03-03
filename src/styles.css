@@ -321,6 +321,22 @@ textarea {
   color: #ef4444;
 }
 
+.status-abierto {
+  color: #facc15;
+}
+
+.status-liquidado {
+  color: #22c55e;
+}
+
+.status-cancelado {
+  color: #ef4444;
+}
+
+.status-entregado {
+  color: #38bdf8;
+}
+
 .toast {
   position: fixed;
   right: 20px;

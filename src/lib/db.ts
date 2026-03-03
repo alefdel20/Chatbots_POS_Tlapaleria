@@ -2,7 +2,7 @@ import { Product, PendingQueueItem, PorPagarOrder, Settings } from './types'
 import { sampleProducts } from './seed'
 
 const DB_NAME = 'pos_db'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 const STORE_PRODUCTS = 'products'
 const STORE_PENDING = 'pending_queue'
@@ -22,6 +22,13 @@ const withRemateDefaults = (product: Product): Product => ({
   remate_end_at: product.remate_end_at ?? null,
   remate_marked_at: product.remate_marked_at ?? null,
   remate_marked_by: product.remate_marked_by ?? null
+})
+
+const withPorPagarDefaults = (order: PorPagarOrder): PorPagarOrder => ({
+  ...order,
+  payment_history: order.payment_history ?? [],
+  canceled_at: order.canceled_at ?? null,
+  delivered_at: order.delivered_at ?? null
 })
 
 const openDb = (): Promise<IDBDatabase> => {
@@ -127,6 +134,14 @@ export const initDb = async (): Promise<void> => {
   const settings = await getSettings()
   if (!settings) {
     await setSettings({ user: 'CAJA1', admin_pin: '1234' })
+  }
+  const orders = await getAll<PorPagarOrder>(STORE_POR_PAGAR)
+  if (orders.length > 0) {
+    await withStore<void>(STORE_POR_PAGAR, 'readwrite', (store) => {
+      for (const order of orders) {
+        store.put(withPorPagarDefaults(order))
+      }
+    })
   }
 }
 
@@ -244,10 +259,99 @@ export const createPorPagarOrder = async (order: PorPagarOrder): Promise<void> =
       }
     }
 
-    porPagarStore.put(order)
+    porPagarStore.put(withPorPagarDefaults(order))
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
   emit('products-changed')
+  emit('por-pagar-changed')
+}
+
+export const addPorPagarPayment = async (
+  orderId: string,
+  payment: { id: string; amount: number; method: 'EFECTIVO' | 'TARJETA'; captured_at: string }
+): Promise<void> => {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_POR_PAGAR, 'readwrite')
+    const store = tx.objectStore(STORE_POR_PAGAR)
+    const req = store.get(orderId)
+    req.onsuccess = () => {
+      const raw = req.result as PorPagarOrder | undefined
+      if (!raw) return
+      const order = withPorPagarDefaults(raw)
+      if (order.status !== 'ABIERTO' && order.status !== 'LIQUIDADO') return
+      const amount = Math.max(0, Number(payment.amount.toFixed(2)))
+      const nextBalance = Number((order.balance - amount).toFixed(2))
+      const updatedBalance = nextBalance <= 0 ? 0 : nextBalance
+      const status = updatedBalance === 0 ? 'LIQUIDADO' : 'ABIERTO'
+      store.put({
+        ...order,
+        balance: updatedBalance,
+        status,
+        payment_history: [...order.payment_history, payment]
+      } as PorPagarOrder)
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  emit('por-pagar-changed')
+}
+
+export const cancelPorPagarOrder = async (orderId: string, canceledAt: string): Promise<void> => {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([STORE_PRODUCTS, STORE_POR_PAGAR], 'readwrite')
+    const productsStore = tx.objectStore(STORE_PRODUCTS)
+    const porPagarStore = tx.objectStore(STORE_POR_PAGAR)
+    const req = porPagarStore.get(orderId)
+    req.onsuccess = () => {
+      const raw = req.result as PorPagarOrder | undefined
+      if (!raw) return
+      const order = withPorPagarDefaults(raw)
+      if (order.status !== 'ABIERTO') return
+
+      for (const item of order.items) {
+        const productReq = productsStore.get(item.barcode)
+        productReq.onsuccess = () => {
+          const product = productReq.result as Product | undefined
+          if (!product || product.stock_snapshot === null) return
+          productsStore.put({ ...product, stock_snapshot: product.stock_snapshot + item.qty_base })
+        }
+      }
+
+      porPagarStore.put({
+        ...order,
+        status: 'CANCELADO',
+        canceled_at: canceledAt
+      } as PorPagarOrder)
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  emit('products-changed')
+  emit('por-pagar-changed')
+}
+
+export const markPorPagarDelivered = async (orderId: string, deliveredAt: string): Promise<void> => {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_POR_PAGAR, 'readwrite')
+    const store = tx.objectStore(STORE_POR_PAGAR)
+    const req = store.get(orderId)
+    req.onsuccess = () => {
+      const raw = req.result as PorPagarOrder | undefined
+      if (!raw) return
+      const order = withPorPagarDefaults(raw)
+      if (order.status !== 'LIQUIDADO') return
+      store.put({
+        ...order,
+        status: 'ENTREGADO',
+        delivered_at: deliveredAt
+      } as PorPagarOrder)
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
   emit('por-pagar-changed')
 }

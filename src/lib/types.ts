@@ -41,7 +41,7 @@ export interface CartItem {
 
 export type PaymentMethod = 'EFECTIVO' | 'TARJETA'
 export type SaleType = 'VENTA' | 'POR_PAGAR'
-export type PorPagarStatus = 'ABIERTO'
+export type PorPagarStatus = 'ABIERTO' | 'LIQUIDADO' | 'CANCELADO' | 'ENTREGADO'
 
 export interface FiscalData {
   wants_invoice: boolean
@@ -98,6 +98,14 @@ export interface PorPagarOrder {
   anticipo: number
   balance: number
   status: PorPagarStatus
+  payment_history: Array<{
+    id: string
+    amount: number
+    method: PaymentMethod
+    captured_at: string
+  }>
+  canceled_at: string | null
+  delivered_at: string | null
   created_at: string
 }
 

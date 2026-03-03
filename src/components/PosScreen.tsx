@@ -6,6 +6,7 @@ import CartTable from './CartTable'
 import GranelModal from './GranelModal'
 import RemateModal from './RemateModal'
 import InvoicePromptModal from './InvoicePromptModal'
+import PorPagarModal from './PorPagarModal'
 
 interface PosScreenProps {
   products: Product[]
@@ -17,9 +18,16 @@ interface PosScreenProps {
   onContingency: () => void
   onUndo: () => void
   onRefreshCatalog: () => void
+  onOpenPorPagar: () => void
   onConfirmSale: (payload: SalePayload) => void
   onQuickAddProduct: (product: Product) => void
   onUpdateProduct: (product: Product) => Promise<void>
+  onConvertToPorPagar: (payload: {
+    cart: CartItem[]
+    customer_name: string
+    customer_phone: string
+    anticipo: number
+  }) => Promise<void>
 }
 
 export default function PosScreen({
@@ -32,9 +40,11 @@ export default function PosScreen({
   onContingency,
   onUndo,
   onRefreshCatalog,
+  onOpenPorPagar,
   onConfirmSale,
   onQuickAddProduct,
-  onUpdateProduct
+  onUpdateProduct,
+  onConvertToPorPagar
 }: PosScreenProps) {
   const [barcode, setBarcode] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
@@ -52,6 +62,7 @@ export default function PosScreen({
   const [quickType, setQuickType] = useState<Product['type']>('PIEZA')
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
   const [pendingPayment, setPendingPayment] = useState<PaymentMethod>('EFECTIVO')
+  const [porPagarOpen, setPorPagarOpen] = useState(false)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   const editingRef = useRef(false)
@@ -225,6 +236,7 @@ export default function PosScreen({
       local_id: uuid(),
       captured_at: nowIso(),
       user: currentUser,
+      sale_type: 'VENTA',
       payment_method: payment,
       fiscal_data: fiscalData,
       items: cart.map((item) => ({
@@ -305,6 +317,7 @@ export default function PosScreen({
         </div>
         <div className="header-actions">
           <button className="btn ghost" onClick={onRefreshCatalog}>Actualizar catalogo</button>
+          <button className="btn ghost" onClick={onOpenPorPagar}>Por pagar</button>
           <button className="btn ghost" onClick={onSyncOpen}>Sincronizar</button>
           <button className="btn warning" onClick={onContingency}>Modo contingencia</button>
           <button className="btn danger" onClick={onUndo}>Deshacer ultima venta</button>
@@ -425,6 +438,9 @@ export default function PosScreen({
         </div>
         <div className="actions">
           <button className="btn ghost" onClick={() => setCart([])}>Cancelar</button>
+          <button className="btn warning" onClick={() => setPorPagarOpen(true)} disabled={cart.length === 0}>
+            Convertir a Por pagar
+          </button>
           <button className="btn success" onClick={confirmSale}>Confirmar venta</button>
         </div>
       </div>
@@ -466,6 +482,26 @@ export default function PosScreen({
           setFiscalData(data)
           setPayment(pendingPayment)
           setInvoiceModalOpen(false)
+        }}
+      />
+
+      <PorPagarModal
+        isOpen={porPagarOpen}
+        total={total}
+        onClose={() => setPorPagarOpen(false)}
+        onConfirm={async (data) => {
+          await onConvertToPorPagar({
+            cart,
+            customer_name: data.customer_name,
+            customer_phone: data.customer_phone,
+            anticipo: data.anticipo
+          })
+          setPorPagarOpen(false)
+          setCart([])
+          setPayment(null)
+          setFiscalData({ wants_invoice: false })
+          setAlert(null)
+          focusBarcode()
         }}
       />
     </div>

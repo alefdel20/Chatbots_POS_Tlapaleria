@@ -1,14 +1,15 @@
-import { Product, PendingQueueItem, Settings } from './types'
+import { Product, PendingQueueItem, PorPagarOrder, Settings } from './types'
 import { sampleProducts } from './seed'
 
 const DB_NAME = 'pos_db'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 const STORE_PRODUCTS = 'products'
 const STORE_PENDING = 'pending_queue'
 const STORE_SETTINGS = 'settings'
 const STORE_META = 'meta'
 const STORE_SALES = 'sales'
+const STORE_POR_PAGAR = 'por_pagar'
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -44,6 +45,9 @@ const openDb = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(STORE_SALES)) {
         db.createObjectStore(STORE_SALES, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(STORE_POR_PAGAR)) {
+        db.createObjectStore(STORE_POR_PAGAR, { keyPath: 'id' })
       }
 
       const oldVersion = (event as IDBVersionChangeEvent).oldVersion
@@ -206,4 +210,44 @@ export const nextContingencyFolio = async (): Promise<string> => {
   const next = current + 1
   await setMeta(key, next)
   return `CONT-${yyyy}${mm}${dd}-${String(next).padStart(3, '0')}`
+}
+
+export const nextPorPagarFolio = async (): Promise<string> => {
+  const today = new Date()
+  const yyyy = today.getFullYear()
+  const mm = String(today.getMonth() + 1).padStart(2, '0')
+  const dd = String(today.getDate()).padStart(2, '0')
+  const key = `porpagar-counter-${yyyy}${mm}${dd}`
+  const current = (await getMeta<number>(key)) ?? 0
+  const next = current + 1
+  await setMeta(key, next)
+  return `PP-${yyyy}${mm}${dd}-${String(next).padStart(3, '0')}`
+}
+
+export const getPorPagarList = () => getAll<PorPagarOrder>(STORE_POR_PAGAR)
+export const getPorPagarById = (id: string) => getByKey<PorPagarOrder>(STORE_POR_PAGAR, id)
+
+export const createPorPagarOrder = async (order: PorPagarOrder): Promise<void> => {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([STORE_PRODUCTS, STORE_POR_PAGAR], 'readwrite')
+    const productsStore = tx.objectStore(STORE_PRODUCTS)
+    const porPagarStore = tx.objectStore(STORE_POR_PAGAR)
+
+    for (const item of order.items) {
+      const req = productsStore.get(item.barcode)
+      req.onsuccess = () => {
+        const product = req.result as Product | undefined
+        if (!product || product.stock_snapshot === null) return
+        const nextStock = Math.max(0, product.stock_snapshot - item.qty_base)
+        productsStore.put({ ...product, stock_snapshot: nextStock })
+      }
+    }
+
+    porPagarStore.put(order)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  emit('products-changed')
+  emit('por-pagar-changed')
 }

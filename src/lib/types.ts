@@ -40,6 +40,8 @@ export interface CartItem {
 }
 
 export type PaymentMethod = 'EFECTIVO' | 'TARJETA'
+export type SaleType = 'VENTA' | 'POR_PAGAR'
+export type PorPagarStatus = 'ABIERTO'
 
 export interface FiscalData {
   wants_invoice: boolean
@@ -53,6 +55,7 @@ export interface SalePayload {
   local_id: string
   captured_at: string
   user: string
+  sale_type?: SaleType
   payment_method: PaymentMethod
   fiscal_data?: FiscalData
   items: Array<{
@@ -70,6 +73,32 @@ export interface SalePayload {
     type: ProductType
     pack_factor: number | null
   }>
+}
+
+export interface PorPagarItem {
+  barcode: string
+  sku: string
+  name: string
+  unit_base: UnitBase
+  type: ProductType
+  pack_factor: number | null
+  qty: number
+  qty_base: number
+  price_gross: number
+}
+
+export interface PorPagarOrder {
+  id: string
+  folio: string
+  sale_type: 'POR_PAGAR'
+  customer_name: string
+  customer_phone: string
+  items: PorPagarItem[]
+  total: number
+  anticipo: number
+  balance: number
+  status: PorPagarStatus
+  created_at: string
 }
 
 export interface ContingencyLine {

@@ -7,6 +7,8 @@ import GranelModal from './GranelModal'
 import RemateModal from './RemateModal'
 import InvoicePromptModal from './InvoicePromptModal'
 import PorPagarModal from './PorPagarModal'
+import RecentSalesHistory from './RecentSalesHistory'
+import { RecentSaleEntry } from '../lib/recentSales'
 
 const isLikelyBarcode = (value: string) => /^[0-9]{8,}$/.test(value.trim())
 
@@ -15,6 +17,7 @@ interface PosScreenProps {
   catalogAvailable: boolean
   online: boolean
   pendingCount: number
+  recentSales: RecentSaleEntry[]
   currentUser: string
   onSyncOpen: () => void
   onContingency: () => void
@@ -37,6 +40,7 @@ export default function PosScreen({
   catalogAvailable,
   online,
   pendingCount,
+  recentSales,
   currentUser,
   onSyncOpen,
   onContingency,
@@ -534,6 +538,8 @@ export default function PosScreen({
           <button className="btn success" onClick={confirmSale}>Confirmar venta</button>
         </div>
       </div>
+
+      <RecentSalesHistory sales={recentSales} />
 
       <GranelModal
         isOpen={Boolean(granelProduct)}

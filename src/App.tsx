@@ -35,6 +35,12 @@ import {
   UndoLastSalePayload
 } from './lib/types'
 import { nowIso, uuid } from './lib/utils'
+import {
+  getRecentSales,
+  RecentSaleEntry,
+  registerRecentSale,
+  updateRecentSaleFolio
+} from './lib/recentSales'
 
 const PIN_LOCK_SECONDS = 120
 
@@ -56,6 +62,7 @@ export default function App() {
   const [undoSummary, setUndoSummary] = useState<{ id: string; total: number; payment: string; at: string } | null>(null)
   const [isUndoing, setIsUndoing] = useState(false)
   const [currentUser, setCurrentUser] = useState('CAJA1')
+  const [recentSales, setRecentSales] = useState<RecentSaleEntry[]>([])
 
   const catalogAvailable = products.length > 0
   const pendingCount = useMemo(() => pending.filter((p) => p.status === 'PENDING_SYNC').length, [pending])
@@ -70,6 +77,7 @@ export default function App() {
       if (settings?.user) setCurrentUser(settings.user)
       const lockUntil = await getMetaDate('pin_lock_until')
       setPinLockedUntil(lockUntil)
+      setRecentSales(getRecentSales())
     }
     init()
   }, [])
@@ -179,6 +187,7 @@ export default function App() {
 
   const handleConfirmSale = async (payload: SalePayload) => {
     await setLastSale(payload)
+    setRecentSales(registerRecentSale(payload))
     if (!online) {
       await addPendingQueueItem(createPending('SALE', payload))
       setMessage('Venta guardada en cola (offline).')
@@ -191,6 +200,9 @@ export default function App() {
         await addPendingQueueItem(createPending('SALE', payload, response.error ?? 'Error remoto'))
         setMessage('Venta en cola por error en servidor.')
         return
+      }
+      if (response.folio) {
+        setRecentSales(updateRecentSaleFolio(payload.local_id, response.folio))
       }
       setMessage('Venta registrada.')
     } catch (error) {
@@ -355,6 +367,7 @@ export default function App() {
         catalogAvailable={catalogAvailable}
         online={online}
         pendingCount={pendingCount}
+        recentSales={recentSales}
         currentUser={currentUser}
         onSyncOpen={() => {
           setSyncError(null)

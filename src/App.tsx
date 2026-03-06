@@ -148,7 +148,7 @@ export default function App() {
   }
 
   const enviarAn8n = async (payload: SalePayload) => {
-    const N8N_WEBHOOK_URL = 'https://chatbotsn8n.com/webhook/0998ffe0-6f57-4fd1-95d4-b5a67494307b'
+    const N8N_WEBHOOK_URL = 'https://chatbotsn8n.com/webhook-test/0998ffe0-6f57-4fd1-95d4-b5a67494307b'
     const totalVenta = payload.items.reduce((sum, item) => sum + item.qty * item.price_gross, 0)
 
     try {

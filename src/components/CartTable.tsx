@@ -16,7 +16,7 @@ export default function CartTable({ items, onUpdateQty, onRemove }: CartTablePro
       const next: Record<string, string> = { ...prev }
 
       for (const it of items) {
-        if (next[it.barcode] === undefined) next[it.barcode] = String(it.qty)
+        next[it.barcode] = String(it.qty)
       }
 
       for (const k of Object.keys(next)) {

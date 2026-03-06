@@ -8,6 +8,7 @@ import {
   addPorPagarPayment,
   addPendingQueueItem,
   cancelPorPagarOrder,
+  clearLastSale,
   createPorPagarOrder,
   dbEvents,
   getMeta,
@@ -21,6 +22,7 @@ import {
   nextPorPagarFolio,
   setLastSale,
   setMeta,
+  updatePendingQueueItem,
   upsertProducts
 } from './lib/db'
 import { api } from './lib/api'
@@ -44,12 +46,15 @@ export default function App() {
   const [screen, setScreen] = useState<'pos' | 'contingency' | 'por_pagar'>('pos')
   const [syncOpen, setSyncOpen] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [pinOpen, setPinOpen] = useState(false)
   const [pinError, setPinError] = useState<string | null>(null)
   const [pinLockedUntil, setPinLockedUntil] = useState<Date | null>(null)
   const [pendingAdminAction, setPendingAdminAction] = useState<(() => void) | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [undoSummary, setUndoSummary] = useState<{ id: string; total: number; payment: string; at: string } | null>(null)
+  const [isUndoing, setIsUndoing] = useState(false)
   const [currentUser, setCurrentUser] = useState('CAJA1')
 
   const catalogAvailable = products.length > 0
@@ -228,69 +233,116 @@ export default function App() {
   }
 
   const confirmUndo = async () => {
-    if (!undoSummary) return
+    if (!undoSummary || isUndoing) return
     const payload: UndoLastSalePayload = {
       local_id: uuid(),
       captured_at: nowIso(),
       last_sale_id: undoSummary.id
     }
-    if (!online) {
-      await addPendingQueueItem(createPending('UNDO_LAST_SALE', payload))
-      setMessage('Undo guardado en cola (offline).')
-      setUndoSummary(null)
-      return
-    }
+    setIsUndoing(true)
     try {
+      if (!online) {
+        await addPendingQueueItem(createPending('UNDO_LAST_SALE', payload))
+        await clearLastSale()
+        setMessage('Undo guardado en cola (offline).')
+        setUndoSummary(null)
+        return
+      }
+
       const response = await api.postUndo(payload)
       if (!response.ok) {
         await addPendingQueueItem(createPending('UNDO_LAST_SALE', payload, response.error ?? 'Error remoto'))
-        setMessage('Undo en cola por error en servidor.')
+        await clearLastSale()
+        setMessage('Error al deshacer venta, se envio a cola.')
       } else {
+        await clearLastSale()
         setMessage('Venta anulada.')
       }
+      setPending(await getPendingQueue())
     } catch (error) {
       await addPendingQueueItem(createPending('UNDO_LAST_SALE', payload, (error as Error).message))
-      setMessage('Undo en cola por error de red.')
+      await clearLastSale()
+      setMessage('Error al deshacer venta, se envio a cola.')
+      setPending(await getPendingQueue())
+    } finally {
+      setIsUndoing(false)
+      setUndoSummary(null)
     }
-    setUndoSummary(null)
   }
 
   const syncPending = async () => {
+    if (isSyncing) return
+    setIsSyncing(true)
     setSyncError(null)
+    setSyncMessage(null)
     if (!online) {
-      setSyncError('Sin conexion. Intenta cuando estes online.')
+      setSyncError('Error al sincronizar')
+      setSyncMessage('Error al sincronizar')
+      setMessage('Error al sincronizar')
+      setIsSyncing(false)
       return
     }
-    const queue = await getPendingQueue()
-    for (const item of queue) {
-      if (item.status !== 'PENDING_SYNC') continue
-      try {
-        if (item.type === 'SALE') {
-          const res = await api.postSale(item.payload as SalePayload)
-          if (!res.ok && !res.duplicate) throw new Error(res.error ?? 'Error en venta')
-        }
-        if (item.type === 'CONTINGENCY_BATCH') {
-          const res = await api.postBatch(item.payload as ContingencyBatchPayload)
-          if (!res.ok && !res.duplicate) throw new Error(res.error ?? 'Error en lote')
-        }
-        if (item.type === 'UNDO_LAST_SALE') {
-          const res = await api.postUndo(item.payload as UndoLastSalePayload)
-          if (!res.ok && !res.duplicate) throw new Error(res.error ?? 'Error en undo')
-        }
-        item.status = 'SYNCED'
-        item.last_attempt_at = nowIso()
-        item.error_message = null
-      } catch (error) {
-        item.status = 'ERROR'
-        item.last_attempt_at = nowIso()
-        item.error_message = (error as Error).message
-        setSyncError(item.error_message)
+
+    try {
+      const queue = await getPendingQueue()
+      const toSync = queue.filter((item) => item.status === 'PENDING_SYNC' || item.status === 'ERROR')
+
+      if (toSync.length === 0) {
+        setSyncMessage('No hay datos pendientes por sincronizar')
+        setMessage('No hay datos pendientes por sincronizar')
+        return
       }
+
+      let hasError = false
+      for (const item of toSync) {
+        try {
+          if (item.type === 'SALE') {
+            const res = await api.postSale(item.payload as SalePayload)
+            if (!res.ok && !res.duplicate) throw new Error(res.error ?? 'Error en venta')
+          }
+          if (item.type === 'CONTINGENCY_BATCH') {
+            const res = await api.postBatch(item.payload as ContingencyBatchPayload)
+            if (!res.ok && !res.duplicate) throw new Error(res.error ?? 'Error en lote')
+          }
+          if (item.type === 'UNDO_LAST_SALE') {
+            const res = await api.postUndo(item.payload as UndoLastSalePayload)
+            if (!res.ok && !res.duplicate) throw new Error(res.error ?? 'Error en undo')
+          }
+          const syncedItem: PendingQueueItem = {
+            ...item,
+            status: 'SYNCED',
+            last_attempt_at: nowIso(),
+            error_message: null
+          }
+          await updatePendingQueueItem(syncedItem)
+        } catch (error) {
+          hasError = true
+          const failedItem: PendingQueueItem = {
+            ...item,
+            status: 'ERROR',
+            last_attempt_at: nowIso(),
+            error_message: (error as Error).message
+          }
+          await updatePendingQueueItem(failedItem)
+        }
+      }
+
+      if (hasError) {
+        setSyncError('Error al sincronizar')
+        setSyncMessage('Error al sincronizar')
+        setMessage('Error al sincronizar')
+      } else {
+        setSyncMessage('Sincronización completada')
+        setMessage('Sincronización completada')
+      }
+    } catch {
+      setSyncError('Error al sincronizar')
+      setSyncMessage('Error al sincronizar')
+      setMessage('Error al sincronizar')
+    } finally {
+      setPending(await getPendingQueue())
+      setIsSyncing(false)
     }
-    for (const item of queue) {
-      await addPendingQueueItem(item)
-    }
-    setPending(await getPendingQueue())
   }
 
   // ✅ Renderiza SOLO una pantalla a la vez (evita “flash” / doble UI)
@@ -304,7 +356,11 @@ export default function App() {
         online={online}
         pendingCount={pendingCount}
         currentUser={currentUser}
-        onSyncOpen={() => setSyncOpen(true)}
+        onSyncOpen={() => {
+          setSyncError(null)
+          setSyncMessage(null)
+          setSyncOpen(true)
+        }}
         onContingency={() => requestAdmin(() => setScreen('contingency'))}
         onUndo={() => requestAdmin(handleUndoRequest)}
         onRefreshCatalog={() => requestAdmin(refreshCatalog)}
@@ -407,6 +463,8 @@ export default function App() {
         isOpen={syncOpen}
         pending={pending}
         lastSyncError={syncError}
+        syncMessage={syncMessage}
+        isSyncing={isSyncing}
         onClose={() => setSyncOpen(false)}
         onSync={syncPending}
       />
@@ -430,8 +488,10 @@ export default function App() {
             <p>Pago: {undoSummary.payment}</p>
             <p className="strong">Total: {undoSummary.total.toFixed(2)}</p>
             <div className="modal-actions">
-              <button className="btn ghost" onClick={() => setUndoSummary(null)}>Cancelar</button>
-              <button className="btn danger" onClick={confirmUndo}>Confirmar anulacion</button>
+              <button className="btn ghost" onClick={() => setUndoSummary(null)} disabled={isUndoing}>Cancelar</button>
+              <button className="btn danger" onClick={confirmUndo} disabled={isUndoing}>
+                {isUndoing ? 'Procesando...' : 'Confirmar anulacion'}
+              </button>
             </div>
           </div>
         </div>

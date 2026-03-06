@@ -131,6 +131,10 @@ export default function PosScreen({
   }
 
   const addToCart = (product: Product, qty: number) => {
+    if (!product?.barcode) return
+    const safeQty = Number(qty)
+    if (!Number.isFinite(safeQty) || safeQty <= 0) return
+
     const remate = getRematePrice(product)
     const effectivePrice = remate?.price ?? product.price_gross
     const source = remate ? 'REMATE' : 'NORMAL'
@@ -140,7 +144,7 @@ export default function PosScreen({
       const packFactor = product.pack_factor ?? 1
 
       if (existing) {
-        const nextQty = existing.qty + qty
+        const nextQty = existing.qty + safeQty
         const qtyBase = product.type === 'GRANEL' ? nextQty : nextQty * packFactor
         return prev.map((item) =>
           item.barcode === product.barcode
@@ -150,7 +154,7 @@ export default function PosScreen({
       }
 
       const displayUnit = product.type === 'PAQUETE' ? 'paquete' : product.unit_base
-      const qtyBase = product.type === 'GRANEL' ? qty : qty * packFactor
+      const qtyBase = product.type === 'GRANEL' ? safeQty : safeQty * packFactor
 
       return [
         ...prev,
@@ -166,7 +170,7 @@ export default function PosScreen({
           price_source: source,
           remate_label: remate?.label ?? null,
           tax_rate: product.tax_rate,
-          qty,
+          qty: safeQty,
           qty_base: qtyBase,
           display_unit: displayUnit
         }
@@ -269,6 +273,21 @@ export default function PosScreen({
       return
     }
 
+    const normalizedItems = cart
+      .map((item) => {
+        const qty = Number(item.qty)
+        if (!Number.isFinite(qty) || qty <= 0) return null
+        const packFactor = item.pack_factor ?? 1
+        const qty_base = item.type === 'GRANEL' ? qty : qty * packFactor
+        return { ...item, qty, qty_base }
+      })
+      .filter((item): item is CartItem => Boolean(item))
+
+    if (normalizedItems.length === 0) {
+      setAlert('Carrito vacio.')
+      return
+    }
+
     const payload: SalePayload = {
       local_id: uuid(),
       captured_at: nowIso(),
@@ -278,7 +297,7 @@ export default function PosScreen({
       amount_received: payment === 'EFECTIVO' ? cashReceived : undefined,
       change_amount: payment === 'EFECTIVO' ? cashChange : undefined,
       fiscal_data: fiscalData,
-      items: cart.map((item) => ({
+      items: normalizedItems.map((item) => ({
         barcode: item.barcode,
         sku: item.sku,
         name: item.name,

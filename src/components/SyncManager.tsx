@@ -5,6 +5,8 @@ interface SyncManagerProps {
   isOpen: boolean
   pending: PendingQueueItem[]
   lastSyncError: string | null
+  syncMessage: string | null
+  isSyncing: boolean
   onClose: () => void
   onSync: () => void
 }
@@ -27,13 +29,22 @@ const summarizePayload = (item: PendingQueueItem) => {
   return ''
 }
 
-export default function SyncManager({ isOpen, pending, lastSyncError, onClose, onSync }: SyncManagerProps) {
+export default function SyncManager({
+  isOpen,
+  pending,
+  lastSyncError,
+  syncMessage,
+  isSyncing,
+  onClose,
+  onSync
+}: SyncManagerProps) {
   if (!isOpen) return null
 
   return (
     <div className="modal-backdrop">
       <div className="modal wide">
         <h2>Sincronización</h2>
+        {syncMessage && <div className="alert">{syncMessage}</div>}
         {lastSyncError && <div className="alert alert-error">{lastSyncError}</div>}
         <div className="pending-list">
           {pending.length === 0 && <div className="muted center">No hay pendientes.</div>}
@@ -49,8 +60,10 @@ export default function SyncManager({ isOpen, pending, lastSyncError, onClose, o
           ))}
         </div>
         <div className="modal-actions">
-          <button className="btn ghost" onClick={onClose}>Cerrar</button>
-          <button className="btn primary" onClick={onSync}>Sincronizar ahora</button>
+          <button className="btn ghost" onClick={onClose} disabled={isSyncing}>Cerrar</button>
+          <button className="btn primary" onClick={onSync} disabled={isSyncing}>
+            {isSyncing ? 'Sincronizando...' : 'Sincronizar ahora'}
+          </button>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-export type UnitBase = 'pza' | 'kg' | 'm' | 'lt' | 'ml'
+﻿export type UnitBase = 'pza' | 'kg' | 'm' | 'lt' | 'ml'
 export type ProductType = 'PIEZA' | 'GRANEL' | 'PAQUETE'
 export type RemateType = 'PORCENTAJE' | 'PRECIO_FIJO'
 export type PaymentMethod = 'EFECTIVO' | 'TARJETA'
@@ -319,3 +319,5 @@ export interface GlobalMetrics {
   total_sales: number
   total_revenue: number
 }
+
+

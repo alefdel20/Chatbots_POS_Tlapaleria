@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+﻿import { useMemo, useState } from 'react'
 import { Product } from '../lib/types'
 import { formatMoney } from '../lib/utils'
 
@@ -113,3 +113,5 @@ export default function InventoryScreen({ tenantId, products, canAdjust, onSaveP
     </div>
   )
 }
+
+

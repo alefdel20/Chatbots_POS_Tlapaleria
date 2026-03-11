@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import { asyncHandler, sendError } from '../lib/http.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { createAuditLog } from '../repositories/auditRepository.js'
@@ -36,3 +36,5 @@ businessRoutes.patch(
     res.json({ ok: true, data: business })
   })
 )
+
+

@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs'
+﻿import bcrypt from 'bcryptjs'
 import { query } from '../db/pool.js'
 
 export const getUserWithBusinessByEmail = async (email) => {
@@ -116,3 +116,5 @@ export const resetUserPassword = async (id, password) => {
   )
   return result.rows[0] ?? null
 }
+
+

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { Product, RemateType } from '../lib/types'
 import { nowIso, toNumber } from '../lib/utils'
 
@@ -63,7 +63,7 @@ export default function RemateModal({ isOpen, product, currentUser, onClose, onS
 
     const parsedValue = toNumber(value)
     if (parsedValue <= 0) {
-      setError('Define un valor de remate v�lido.')
+      setError('Define un valor de remate válido.')
       return
     }
     if (type === 'PORCENTAJE' && (parsedValue <= 0 || parsedValue >= 100)) {
@@ -130,3 +130,4 @@ export default function RemateModal({ isOpen, product, currentUser, onClose, onS
     </div>
   )
 }
+

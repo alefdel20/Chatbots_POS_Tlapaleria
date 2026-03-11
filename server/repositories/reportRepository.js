@@ -1,4 +1,4 @@
-import { query } from '../db/pool.js'
+﻿import { query } from '../db/pool.js'
 
 export const getTenantMetrics = async (tenantId) => {
   const result = await query(
@@ -37,3 +37,5 @@ export const listAuditLogs = async (tenantId) => {
     : await query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200')
   return result.rows
 }
+
+

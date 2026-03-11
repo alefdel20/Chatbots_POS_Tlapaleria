@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+﻿import { useMemo, useState } from 'react'
 import { MODULES } from '../lib/permissions'
 import { Business, UserRecord } from '../lib/types'
 
@@ -102,3 +102,5 @@ export default function BusinessesAdmin({ businesses, onCreate, onUpdate }: Busi
     </div>
   )
 }
+
+

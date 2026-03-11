@@ -1,4 +1,4 @@
-import cors from 'cors'
+﻿import cors from 'cors'
 import express from 'express'
 import { env } from './config/env.js'
 import { query } from './db/pool.js'
@@ -56,3 +56,5 @@ app.use((error, req, res, _next) => {
 app.listen(env.port, () => {
   console.log(`API listening on http://127.0.0.1:${env.port}`)
 })
+
+

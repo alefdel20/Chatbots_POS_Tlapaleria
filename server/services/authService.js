@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs'
+﻿import bcrypt from 'bcryptjs'
 import { signToken } from '../lib/tokens.js'
 import { getUserWithBusinessByEmail, getUserWithBusinessById } from '../repositories/userRepository.js'
 
@@ -54,3 +54,5 @@ export const getCurrentSession = async (userId) => {
   if (!row) return null
   return buildAuthPayload(row)
 }
+
+

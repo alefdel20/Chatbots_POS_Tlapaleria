@@ -1,4 +1,4 @@
-import { Product } from './types'
+﻿import { Product } from './types'
 
 type SeedProduct = Omit<Product, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
 
@@ -164,3 +164,5 @@ export const sampleProducts: SeedProduct[] = [
     inventario_confirmado: true
   }
 ]
+
+

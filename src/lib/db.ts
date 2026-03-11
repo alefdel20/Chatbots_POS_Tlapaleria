@@ -1,4 +1,4 @@
-import { loadSession, saveSession } from './auth'
+﻿import { loadSession, saveSession } from './auth'
 import { api } from './api'
 import { apiUrl } from './http'
 import {
@@ -333,3 +333,5 @@ export const markPorPagarDelivered = async (orderId: string, deliveredAt: string
   writePorPagar(readPorPagar().map((order) => order.id === orderId ? { ...order, status: 'ENTREGADO', delivered_at: deliveredAt, updated_at: deliveredAt } : order))
   emit('por-pagar-changed')
 }
+
+

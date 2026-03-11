@@ -1,4 +1,4 @@
-import { AuthSession, UserRecord } from './types'
+﻿import { AuthSession, UserRecord } from './types'
 
 const SESSION_KEY = 'pos_auth_session_v1'
 const HASH_PREFIX = 'pbkdf2$'
@@ -77,3 +77,5 @@ export const loadSession = (): AuthSession | null => {
 }
 
 export const isUserAllowedToLogin = (user: UserRecord | null | undefined) => Boolean(user?.activo)
+
+

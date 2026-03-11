@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+﻿import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { CartItem, FiscalData, PaymentMethod, Product, SalePayload } from '../lib/types'
 import { formatMoney, getRematePrice, nowIso, toNumber, uuid } from '../lib/utils'
@@ -351,3 +351,5 @@ export default function PosScreen(props: PosScreenProps) {
     </div>
   )
 }
+
+

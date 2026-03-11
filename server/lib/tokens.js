@@ -1,4 +1,4 @@
-import crypto from 'node:crypto'
+﻿import crypto from 'node:crypto'
 import { env } from '../config/env.js'
 
 const base64UrlEncode = (value) => Buffer.from(value).toString('base64url')
@@ -19,3 +19,5 @@ export const verifyToken = (token) => {
   if (payload.exp && Date.now() > payload.exp) return null
   return payload
 }
+
+

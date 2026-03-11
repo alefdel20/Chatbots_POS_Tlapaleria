@@ -1,4 +1,4 @@
-import { query } from '../db/pool.js'
+﻿import { query } from '../db/pool.js'
 
 export const createAuditLog = async ({ tenantId, actorUserId, action, targetType, targetId, details }) => {
   await query(
@@ -9,3 +9,5 @@ export const createAuditLog = async ({ tenantId, actorUserId, action, targetType
     [tenantId, actorUserId, action, targetType, targetId ?? null, JSON.stringify(details ?? {})]
   )
 }
+
+

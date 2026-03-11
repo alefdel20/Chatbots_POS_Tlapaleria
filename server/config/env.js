@@ -1,4 +1,4 @@
-import dotenv from 'dotenv'
+﻿import dotenv from 'dotenv'
 
 dotenv.config()
 
@@ -29,3 +29,5 @@ if (env.pg.connectionString) {
 } else {
   console.log(`[config] PostgreSQL configured via PG* vars host=${env.pg.host} port=${env.pg.port} db=${env.pg.database}`)
 }
+
+

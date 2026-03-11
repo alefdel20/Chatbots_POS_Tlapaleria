@@ -1,4 +1,4 @@
-# POS SaaS Multiusuario
+﻿# POS SaaS Multiusuario
 
 POS con frontend Vite/React y backend Node/Express conectado a PostgreSQL.
 
@@ -95,3 +95,5 @@ curl -X POST http://127.0.0.1:3001/api/auth/login ^
   -H "Content-Type: application/json" ^
   -d "{\"email\":\"superadmin@local.test\",\"password\":\"Admin123!\"}"
 ```
+
+

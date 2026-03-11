@@ -1,4 +1,4 @@
-import { loadSession } from './auth'
+﻿import { loadSession } from './auth'
 import { apiUrl } from './http'
 import { ContingencyBatchPayload, Product, SalePayload, UndoLastSalePayload } from './types'
 
@@ -56,3 +56,5 @@ export const api = {
     return { ok: true }
   }
 }
+
+

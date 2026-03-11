@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { CartItem } from '../lib/types'
 import { formatMoney } from '../lib/utils'
 
@@ -123,3 +123,5 @@ export default function CartTable({ items, onUpdateQty, onRemove }: CartTablePro
     </table>
   )
 }
+
+

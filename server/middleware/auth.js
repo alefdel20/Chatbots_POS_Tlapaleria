@@ -1,4 +1,4 @@
-import { query } from '../db/pool.js'
+﻿import { query } from '../db/pool.js'
 import { verifyToken } from '../lib/tokens.js'
 import { sendError } from '../lib/http.js'
 
@@ -45,3 +45,5 @@ export const withTenantScope = (req, explicitTenantId) => {
   if (req.auth.role === 'superadmin' && explicitTenantId) return explicitTenantId
   return req.auth.tenantId
 }
+
+

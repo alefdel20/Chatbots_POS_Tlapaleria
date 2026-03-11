@@ -1,4 +1,4 @@
-import { pool, query } from '../db/pool.js'
+﻿import { pool, query } from '../db/pool.js'
 
 export const listSales = async (tenantId) => {
   const result = await query(
@@ -141,3 +141,5 @@ export const voidSale = async ({ tenantId, saleId, userId }) => {
     client.release()
   }
 }
+
+

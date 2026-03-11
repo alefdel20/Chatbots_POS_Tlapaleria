@@ -1,4 +1,4 @@
-import { ModuleKey, UserRecord, UserRole } from './types'
+﻿import { ModuleKey, UserRecord, UserRole } from './types'
 
 export type Permission =
   | 'system.view'
@@ -112,3 +112,5 @@ export const canEditUser = (actor: UserRecord, target: UserRecord): boolean => {
 }
 
 export const getDefaultModules = (): ModuleKey[] => ['pos', 'inventario', 'reportes']
+
+

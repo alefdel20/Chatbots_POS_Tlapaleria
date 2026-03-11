@@ -1,4 +1,4 @@
-import { Product } from './types'
+﻿import { Product } from './types'
 
 export const formatMoney = (value: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value)
@@ -40,3 +40,5 @@ export const getRematePrice = (product: Product): { price: number; label: string
   const fixed = Math.max(0.01, Number(product.remate_value.toFixed(2)))
   return { price: fixed, label: 'Remate precio fijo' }
 }
+
+

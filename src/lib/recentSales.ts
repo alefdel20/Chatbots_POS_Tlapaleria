@@ -1,4 +1,4 @@
-import { SalePayload } from './types'
+﻿import { SalePayload } from './types'
 
 const LIMIT = 20
 const keyFor = (tenantId: string) => `pos_recent_sales:${tenantId}`
@@ -41,3 +41,5 @@ export const updateRecentSaleFolio = (tenantId: string, saleId: string, folio: s
   persist(tenantId, next)
   return next
 }
+
+

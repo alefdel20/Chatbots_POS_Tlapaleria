@@ -1,4 +1,4 @@
-import { SaleRecord, TenantMetrics } from '../lib/types'
+﻿import { SaleRecord, TenantMetrics } from '../lib/types'
 import { formatMoney } from '../lib/utils'
 import DashboardCards from './DashboardCards'
 
@@ -39,3 +39,5 @@ export default function ReportsScreen({ metrics, sales }: ReportsScreenProps) {
     </div>
   )
 }
+
+

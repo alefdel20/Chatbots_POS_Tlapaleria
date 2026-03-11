@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 
 interface LoginScreenProps {
   error: string | null
@@ -38,3 +38,5 @@ export default function LoginScreen({ error, loading, onLogin }: LoginScreenProp
     </div>
   )
 }
+
+

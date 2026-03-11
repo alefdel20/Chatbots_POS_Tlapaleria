@@ -1,4 +1,4 @@
-import { RecentSaleEntry } from '../lib/recentSales'
+﻿import { RecentSaleEntry } from '../lib/recentSales'
 import { formatMoney } from '../lib/utils'
 
 interface RecentSalesHistoryProps {
@@ -30,3 +30,5 @@ export default function RecentSalesHistory({ sales }: RecentSalesHistoryProps) {
     </div>
   )
 }
+
+

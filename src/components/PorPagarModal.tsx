@@ -76,3 +76,5 @@ export default function PorPagarModal({ isOpen, total, onClose, onConfirm }: Por
     </div>
   )
 }
+
+

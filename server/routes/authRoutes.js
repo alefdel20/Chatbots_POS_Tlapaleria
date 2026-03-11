@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import { asyncHandler, sendError } from '../lib/http.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getCurrentSession, login } from '../services/authService.js'
@@ -30,3 +30,5 @@ authRoutes.get(
     res.json({ ok: true, ...result })
   })
 )
+
+

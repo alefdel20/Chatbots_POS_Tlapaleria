@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import { asyncHandler } from '../lib/http.js'
 import { requireAuth } from '../middleware/auth.js'
 import { listAuditLogs, getGlobalMetrics, getTenantMetrics } from '../repositories/reportRepository.js'
@@ -29,3 +29,5 @@ reportRoutes.get(
     res.json({ ok: true, data: await listAuditLogs(tenantId) })
   })
 )
+
+

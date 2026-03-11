@@ -1,4 +1,4 @@
-import { query } from '../db/pool.js'
+﻿import { query } from '../db/pool.js'
 
 export const listBusinesses = async () => {
   const result = await query('SELECT * FROM businesses ORDER BY nombre ASC')
@@ -40,3 +40,5 @@ export const updateBusiness = async (id, input) => {
   )
   return result.rows[0] ?? null
 }
+
+

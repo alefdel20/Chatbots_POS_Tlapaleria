@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import { asyncHandler, sendError } from '../lib/http.js'
 import { requireAuth } from '../middleware/auth.js'
 import { createAuditLog } from '../repositories/auditRepository.js'
@@ -81,3 +81,5 @@ productRoutes.get(
     res.json({ ok: true, data: result.rows[0] ?? null })
   })
 )
+
+

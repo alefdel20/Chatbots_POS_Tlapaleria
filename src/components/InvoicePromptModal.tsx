@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+ï»¿import { useEffect, useState } from 'react'
 import { FiscalData } from '../lib/types'
 
 interface InvoicePromptModalProps {
@@ -38,12 +38,12 @@ export default function InvoicePromptModal({ isOpen, paymentLabel, initial, onCl
     }
 
     if (!rfc.trim() || !cp.trim()) {
-      setError('RFC y Código Postal son obligatorios.')
+      setError('RFC y CÃ³digo Postal son obligatorios.')
       return
     }
 
     if (email.trim() && !isValidEmail(email)) {
-      setError('Email con formato inválido.')
+      setError('Email con formato invÃ¡lido.')
       return
     }
 
@@ -59,15 +59,15 @@ export default function InvoicePromptModal({ isOpen, paymentLabel, initial, onCl
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>Método de pago: {paymentLabel}</h2>
-        <p>¿Desea factura?</p>
+        <h2>MÃ©todo de pago: {paymentLabel}</h2>
+        <p>Â¿Desea factura?</p>
 
         <div className="row gap">
           <button className={!wantsInvoice ? 'btn primary' : 'btn ghost'} onClick={() => setWantsInvoice(false)}>
             No
           </button>
           <button className={wantsInvoice ? 'btn primary' : 'btn ghost'} onClick={() => setWantsInvoice(true)}>
-            Sí
+            SÃ­
           </button>
         </div>
 
@@ -76,13 +76,13 @@ export default function InvoicePromptModal({ isOpen, paymentLabel, initial, onCl
             <label>RFC</label>
             <input value={rfc} onChange={(e) => setRfc(e.target.value)} />
 
-            <label>Razón Social</label>
+            <label>RazÃ³n Social</label>
             <input value={razonSocial} onChange={(e) => setRazonSocial(e.target.value)} />
 
             <label>Email</label>
             <input value={email} onChange={(e) => setEmail(e.target.value)} />
 
-            <label>Código Postal</label>
+            <label>CÃ³digo Postal</label>
             <input value={cp} onChange={(e) => setCp(e.target.value)} />
           </>
         )}
@@ -97,3 +97,4 @@ export default function InvoicePromptModal({ isOpen, paymentLabel, initial, onCl
     </div>
   )
 }
+

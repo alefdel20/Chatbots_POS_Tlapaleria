@@ -1,4 +1,4 @@
-import { query } from '../db/pool.js'
+﻿import { query } from '../db/pool.js'
 
 export const listProducts = async (tenantId, search = '') => {
   const params = [tenantId]
@@ -125,3 +125,5 @@ export const adjustProductInventory = async (client, tenantId, productId, delta,
   )
   return result.rows[0] ?? null
 }
+
+

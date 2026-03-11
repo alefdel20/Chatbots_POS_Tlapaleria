@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import { asyncHandler } from '../lib/http.js'
 import { requireAuth } from '../middleware/auth.js'
 import { createAuditLog } from '../repositories/auditRepository.js'
@@ -56,3 +56,5 @@ salesRoutes.get(
     res.json({ ok: true, data: await listInventoryMovements(tenantId) })
   })
 )
+
+

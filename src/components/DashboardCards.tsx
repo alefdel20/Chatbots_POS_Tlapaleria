@@ -1,4 +1,4 @@
-interface Metric {
+﻿interface Metric {
   label: string
   value: string | number
   hint?: string
@@ -17,3 +17,5 @@ export default function DashboardCards({ metrics }: { metrics: Metric[] }) {
     </div>
   )
 }
+
+

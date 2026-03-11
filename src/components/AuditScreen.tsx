@@ -1,4 +1,4 @@
-import { AuditLog } from '../lib/types'
+﻿import { AuditLog } from '../lib/types'
 
 export default function AuditScreen({ logs }: { logs: AuditLog[] }) {
   return (
@@ -22,3 +22,5 @@ export default function AuditScreen({ logs }: { logs: AuditLog[] }) {
     </div>
   )
 }
+
+

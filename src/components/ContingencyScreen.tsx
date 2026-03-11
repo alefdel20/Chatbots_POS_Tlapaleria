@@ -6,11 +6,13 @@ import { nextContingencyFolio } from '../lib/db'
 
 interface ContingencyScreenProps {
   products: Product[]
+  tenantId: string
+  userId: string
   onBack: () => void
   onSave: (payload: ContingencyBatchPayload) => void
 }
 
-export default function ContingencyScreen({ products, onBack, onSave }: ContingencyScreenProps) {
+export default function ContingencyScreen({ products, tenantId, userId, onBack, onSave }: ContingencyScreenProps) {
   const [folio, setFolio] = useState('')
   const [note, setNote] = useState('')
   const [barcode, setBarcode] = useState('')
@@ -21,52 +23,42 @@ export default function ContingencyScreen({ products, onBack, onSave }: Continge
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    nextContingencyFolio().then(setFolio)
-  }, [])
+    nextContingencyFolio(tenantId).then(setFolio)
+  }, [tenantId])
 
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 100)
   }, [])
 
   const totals = useMemo(() => {
-    const efectivo = lines
-      .filter((l) => l.payment_method === 'EFECTIVO')
-      .reduce((sum, l) => sum + l.qty * l.price_gross, 0)
-    const tarjeta = lines
-      .filter((l) => l.payment_method === 'TARJETA')
-      .reduce((sum, l) => sum + l.qty * l.price_gross, 0)
+    const efectivo = lines.filter((line) => line.payment_method === 'EFECTIVO').reduce((sum, line) => sum + line.qty * line.price_gross, 0)
+    const tarjeta = lines.filter((line) => line.payment_method === 'TARJETA').reduce((sum, line) => sum + line.qty * line.price_gross, 0)
     return { efectivo, tarjeta, total: efectivo + tarjeta }
   }, [lines])
 
   const handleAdd = async () => {
     if (!barcode.trim()) return
-    const local = products.find((p) => p.barcode === barcode.trim())
-    let product: Product | undefined = local
+    let product = products.find((item) => item.barcode === barcode.trim())
     if (!product && navigator.onLine) {
       try {
-        product = (await api.lookupProduct(barcode.trim())) ?? undefined
+        product = (await api.lookupProduct(tenantId, barcode.trim())) ?? undefined
       } catch {
         product = undefined
       }
     }
-    if (!product) {
-      setError('Producto no encontrado en catálogo.')
-      return
-    }
+    if (!product) return setError('Producto no encontrado.')
     const qtyValue = Number.parseFloat(qty.replace(',', '.'))
-    if (!Number.isFinite(qtyValue) || qtyValue <= 0) {
-      setError('Cantidad inválida.')
-      return
-    }
+    if (!Number.isFinite(qtyValue) || qtyValue <= 0) return setError('Cantidad invalida.')
     setLines((prev) => [
       ...prev,
       {
+        product_id: product.id,
         barcode: product.barcode,
         sku: product.sku,
         name: product.name,
         qty: qtyValue,
         unit_base: product.unit_base,
-        price_gross: product.price_gross,
+        price_gross: product.precio_venta,
         tax_rate: product.tax_rate,
         payment_method: payment
       }
@@ -74,28 +66,15 @@ export default function ContingencyScreen({ products, onBack, onSave }: Continge
     setBarcode('')
     setQty('1.00')
     setError(null)
-    setTimeout(() => inputRef.current?.focus(), 50)
   }
 
-  const updateLine = (index: number, next: Partial<ContingencyLine>) => {
-    setLines((prev) => prev.map((line, idx) => (idx === index ? { ...line, ...next } : line)))
-  }
-
-  const removeLine = (index: number) => {
-    setLines((prev) => prev.filter((_, idx) => idx !== index))
-  }
-
-  const handleSave = () => {
-    if (!note.trim()) {
-      setError('La nota es obligatoria.')
-      return
-    }
-    if (lines.length === 0) {
-      setError('Agrega al menos una línea.')
-      return
-    }
+  const save = () => {
+    if (!note.trim()) return setError('La nota es obligatoria.')
+    if (!lines.length) return setError('Agrega al menos una linea.')
     const payload: ContingencyBatchPayload = {
       local_batch_id: uuid(),
+      tenant_id: tenantId,
+      usuario_id: userId,
       captured_at: nowIso(),
       note: note.trim(),
       folio_lote: folio,
@@ -117,19 +96,14 @@ export default function ContingencyScreen({ products, onBack, onSave }: Continge
       <div className="grid two">
         <div className="card">
           <label>Nota obligatoria</label>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej: Apagón 14:00–17:00" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} />
           {error && <div className="alert alert-error">{error}</div>}
         </div>
         <div className="card">
           <div className="row gap">
             <div className="grow">
               <label>Barcode</label>
-              <input
-                ref={inputRef}
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-              />
+              <input ref={inputRef} value={barcode} onChange={(e) => setBarcode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAdd()} />
             </div>
             <div>
               <label>Qty</label>
@@ -143,52 +117,25 @@ export default function ContingencyScreen({ products, onBack, onSave }: Continge
               </div>
             </div>
           </div>
-          <button className="btn primary" onClick={handleAdd}>Agregar línea</button>
+          <button className="btn primary" onClick={handleAdd}>Agregar linea</button>
         </div>
       </div>
 
       <div className="card">
         <table className="cart-table">
           <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Qty</th>
-              <th>Unidad</th>
-              <th>Pago</th>
-              <th>Precio</th>
-              <th>Subtotal</th>
-              <th></th>
-            </tr>
+            <tr><th>Producto</th><th>Qty</th><th>Pago</th><th>Precio</th><th>Subtotal</th><th></th></tr>
           </thead>
           <tbody>
-            {lines.length === 0 && (
-              <tr><td colSpan={7} className="muted center">Sin líneas</td></tr>
-            )}
+            {lines.length === 0 && <tr><td colSpan={6} className="muted center">Sin lineas</td></tr>}
             {lines.map((line, index) => (
               <tr key={`${line.barcode}-${index}`}>
                 <td>{line.name}</td>
-                <td>
-                  <input
-                    className="qty-input"
-                    value={line.qty}
-                    onChange={(e) => updateLine(index, { qty: Number.parseFloat(e.target.value) })}
-                  />
-                </td>
-                <td>{line.unit_base}</td>
-                <td>
-                  <select
-                    value={line.payment_method}
-                    onChange={(e) => updateLine(index, { payment_method: e.target.value as PaymentMethod })}
-                  >
-                    <option value="EFECTIVO">Efectivo</option>
-                    <option value="TARJETA">Tarjeta</option>
-                  </select>
-                </td>
+                <td><input className="qty-input" value={line.qty} onChange={(e) => setLines((prev) => prev.map((row, rowIndex) => rowIndex === index ? { ...row, qty: Number.parseFloat(e.target.value) || 0 } : row))} /></td>
+                <td>{line.payment_method}</td>
                 <td>{formatMoney(line.price_gross)}</td>
                 <td>{formatMoney(line.qty * line.price_gross)}</td>
-                <td>
-                  <button className="btn ghost" onClick={() => removeLine(index)}>Eliminar</button>
-                </td>
+                <td><button className="btn ghost" onClick={() => setLines((prev) => prev.filter((_, rowIndex) => rowIndex !== index))}>Eliminar</button></td>
               </tr>
             ))}
           </tbody>
@@ -199,7 +146,7 @@ export default function ContingencyScreen({ products, onBack, onSave }: Continge
         <div>Efectivo: {formatMoney(totals.efectivo)}</div>
         <div>Tarjeta: {formatMoney(totals.tarjeta)}</div>
         <div className="strong">Total: {formatMoney(totals.total)}</div>
-        <button className="btn primary" onClick={handleSave}>Guardar lote</button>
+        <button className="btn primary" onClick={save}>Guardar lote</button>
       </div>
     </div>
   )

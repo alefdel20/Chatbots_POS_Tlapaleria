@@ -1,36 +1,97 @@
-﻿# POS Tlapalería (PWA)
+# POS SaaS Multiusuario
 
-POS simple, offline-first, pensado para uso con pistola de código de barras (actúa como teclado). Incluye cola de pendientes y mock API.
+POS con frontend Vite/React y backend Node/Express conectado a PostgreSQL.
 
 ## Requisitos
 - Node.js 18+
 - npm
+- PostgreSQL con el esquema ya cargado
 
-## Cómo correr
-```bash
-npm install
-npm run dev
+## Variables de entorno
+Crea `.env` a partir de `.env.example`.
+
+Precedencia:
+1. Si `DATABASE_URL` tiene valor, el backend usa esa cadena y ignora `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`.
+2. Si `DATABASE_URL` esta vacia, usa las variables `PG*`.
+
+Variables soportadas:
+- `PORT`
+- `DATABASE_URL`
+- `PGHOST`
+- `PGPORT`
+- `PGDATABASE`
+- `PGUSER`
+- `PGPASSWORD`
+- `PGSSLMODE`
+- `SESSION_SECRET`
+- `VITE_API_BASE_URL`
+
+## Configuracion local
+Usa localhost o 127.0.0.1.
+
+Ejemplo:
+```env
+PORT=3001
+DATABASE_URL=
+PGHOST=127.0.0.1
+PGPORT=5432
+PGDATABASE=pos_saas
+PGUSER=postgres
+PGPASSWORD=changeme
+PGSSLMODE=disable
+SESSION_SECRET=change-this-in-production
+VITE_API_BASE_URL=http://127.0.0.1:3001
 ```
-Abrir `http://localhost:5173`.
 
-## Instalar como PWA
-1. Abre la app en Chrome o Edge.
-2. Menú → **Instalar POS Tlapalería**.
-3. La app abrirá en ventana tipo app.
+## Configuracion VPS con Docker
+Usa el host interno del servicio de Postgres en la red Docker, no la IP publica.
 
-## Probar offline
-1. Abre la app una vez online.
-2. En DevTools → Application → Service Workers, activa `Offline`.
-3. La app seguirá funcionando con el catálogo cache y guardará ventas en cola.
+Ejemplo si el servicio/container se llama `postgres`:
+```env
+PORT=3001
+DATABASE_URL=postgres://postgres:changeme@postgres:5432/pos_saas
+PGSSLMODE=disable
+SESSION_SECRET=change-this-in-production
+VITE_API_BASE_URL=https://tu-dominio-o-ip
+```
 
-## Funciones clave
-- Escaneo rápido con autofocus permanente.
-- Modo contingencia con PIN Admin (demo: `1234`).
-- Deshacer última venta con PIN Admin.
-- Cola de pendientes y sincronización manual.
+Alternativa sin `DATABASE_URL`:
+```env
+PGHOST=postgres
+PGPORT=5432
+PGDATABASE=pos_saas
+PGUSER=postgres
+PGPASSWORD=changeme
+```
 
-## Mock API
-Los endpoints están simulados en `src/lib/api.ts` y respetan idempotencia por `local_id`.
+## Como correr backend local
+```bash
+npm run dev:server
+```
 
-## Datos demo
-Catálogo precargado con 10 productos (incluye granel y paquete). Se carga en IndexedDB al iniciar.
+## Como correr frontend local
+```bash
+npm run dev:client
+```
+
+## Como correr backend en VPS
+Sin modo watch:
+```bash
+npm run start:server
+```
+
+Si ejecutas dentro del contenedor/app server en la misma red Docker que Postgres, `PGHOST` o `DATABASE_URL` debe usar el nombre interno del servicio, por ejemplo `postgres`.
+
+## Login
+El login consulta PostgreSQL en `users`, busca por `email`, valida `activo = true` y compara `password_hash` usando bcrypt.
+
+Usuarios seed esperados:
+- `superadmin@local.test`
+- `owner@local.test`
+
+## Prueba rapida API login
+```bash
+curl -X POST http://127.0.0.1:3001/api/auth/login ^
+  -H "Content-Type: application/json" ^
+  -d "{\"email\":\"superadmin@local.test\",\"password\":\"Admin123!\"}"
+```

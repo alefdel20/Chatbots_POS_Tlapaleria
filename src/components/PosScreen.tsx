@@ -1,13 +1,13 @@
-﻿import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { CartItem, FiscalData, PaymentMethod, Product, SalePayload } from '../lib/types'
 import { formatMoney, getRematePrice, nowIso, toNumber, uuid } from '../lib/utils'
 import CartTable from './CartTable'
 import GranelModal from './GranelModal'
-import RemateModal from './RemateModal'
 import InvoicePromptModal from './InvoicePromptModal'
 import PorPagarModal from './PorPagarModal'
 import RecentSalesHistory from './RecentSalesHistory'
+import RemateModal from './RemateModal'
 import { RecentSaleEntry } from '../lib/recentSales'
 
 const isLikelyBarcode = (value: string) => /^[0-9]{8,}$/.test(value.trim())
@@ -19,6 +19,8 @@ interface PosScreenProps {
   pendingCount: number
   recentSales: RecentSaleEntry[]
   currentUser: string
+  userId: string
+  tenantId: string
   onSyncOpen: () => void
   onContingency: () => void
   onUndo: () => void
@@ -27,31 +29,30 @@ interface PosScreenProps {
   onConfirmSale: (payload: SalePayload) => void
   onQuickAddProduct: (product: Product) => void
   onUpdateProduct: (product: Product) => Promise<void>
-  onConvertToPorPagar: (payload: {
-    cart: CartItem[]
-    customer_name: string
-    customer_phone: string
-    anticipo: number
-  }) => Promise<void>
+  onConvertToPorPagar: (payload: { cart: CartItem[]; customer_name: string; customer_phone: string; anticipo: number }) => Promise<void>
 }
 
-export default function PosScreen({
-  products,
-  catalogAvailable,
-  online,
-  pendingCount,
-  recentSales,
-  currentUser,
-  onSyncOpen,
-  onContingency,
-  onUndo,
-  onRefreshCatalog,
-  onOpenPorPagar,
-  onConfirmSale,
-  onQuickAddProduct,
-  onUpdateProduct,
-  onConvertToPorPagar
-}: PosScreenProps) {
+export default function PosScreen(props: PosScreenProps) {
+  const {
+    products,
+    catalogAvailable,
+    online,
+    pendingCount,
+    recentSales,
+    currentUser,
+    userId,
+    tenantId,
+    onSyncOpen,
+    onContingency,
+    onUndo,
+    onRefreshCatalog,
+    onOpenPorPagar,
+    onConfirmSale,
+    onQuickAddProduct,
+    onUpdateProduct,
+    onConvertToPorPagar
+  } = props
+
   const [barcode, setBarcode] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [payment, setPayment] = useState<PaymentMethod | null>(null)
@@ -70,163 +71,78 @@ export default function PosScreen({
   const [pendingPayment, setPendingPayment] = useState<PaymentMethod>('EFECTIVO')
   const [porPagarOpen, setPorPagarOpen] = useState(false)
   const [cashReceivedText, setCashReceivedText] = useState('')
-
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const editingRef = useRef(false)
 
-  const total = useMemo(
-    () => cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0),
-    [cart]
-  )
+  const total = useMemo(() => cart.reduce((sum, item) => sum + item.qty * item.price_gross, 0), [cart])
   const cashReceived = toNumber(cashReceivedText)
   const cashChange = payment === 'EFECTIVO' ? Math.max(0, Number((cashReceived - total).toFixed(2))) : 0
 
   const scanSuggestions = useMemo(() => {
     const q = barcode.trim().toLowerCase()
     if (!q || isLikelyBarcode(q)) return []
-    return products
-      .filter((p) =>
-        p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
-      )
-      .slice(0, 8)
+    return products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0, 8)
   }, [barcode, products])
 
   const catalogPreview = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase()
-    const list = q
-      ? products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.barcode.includes(q))
-      : products
-    return list.slice(0, 8)
+    const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.barcode.includes(q)) : products
+    return filtered.slice(0, 8)
   }, [catalogSearch, products])
 
-  const focusBarcode = () => {
-    requestAnimationFrame(() => {
-      if (granelProduct) return
-      if (editingRef.current) return
-      inputRef.current?.focus()
-    })
-  }
-
-  const handleFocusCapture = (event: React.FocusEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement
-    if (!target) return
-    if (inputRef.current && target === inputRef.current) {
-      editingRef.current = false
-      return
-    }
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
-      editingRef.current = true
-    }
-  }
-
-  const handleBlurCapture = () => {
-    setTimeout(() => {
-      const el = document.activeElement as HTMLElement | null
-      if (!el) {
-        editingRef.current = false
-        return
-      }
-      if (inputRef.current && el === inputRef.current) {
-        editingRef.current = false
-        return
-      }
-      editingRef.current = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
-    }, 0)
-  }
+  const focusBarcode = () => requestAnimationFrame(() => inputRef.current?.focus())
 
   const addToCart = (product: Product, qty: number) => {
-    if (!product?.barcode) return
-    const safeQty = Number(qty)
-    if (!Number.isFinite(safeQty) || safeQty <= 0) return
-
+    if (!product?.barcode || qty <= 0) return
     const remate = getRematePrice(product)
-    const effectivePrice = remate?.price ?? product.price_gross
-    const source = remate ? 'REMATE' : 'NORMAL'
-
+    const price = remate?.price ?? product.precio_venta
+    const price_source = remate ? 'REMATE' : 'NORMAL'
     setCart((prev) => {
-      const existing = prev.find((item) => item.barcode === product.barcode)
+      const existing = prev.find((item) => item.product_id === product.id)
       const packFactor = product.pack_factor ?? 1
-
+      const nextQty = existing ? existing.qty + qty : qty
+      const qty_base = product.type === 'GRANEL' ? nextQty : nextQty * packFactor
       if (existing) {
-        const nextQty = existing.qty + safeQty
-        const qtyBase = product.type === 'GRANEL' ? nextQty : nextQty * packFactor
-        return prev.map((item) =>
-          item.barcode === product.barcode
-            ? { ...item, qty: nextQty, qty_base: qtyBase, price_gross: effectivePrice, price_source: source, remate_label: remate?.label ?? null }
-            : item
-        )
+        return prev.map((item) => item.product_id === product.id ? { ...item, qty: nextQty, qty_base, price_gross: price, price_source, remate_label: remate?.label ?? null } : item)
       }
-
-      const displayUnit = product.type === 'PAQUETE' ? 'paquete' : product.unit_base
-      const qtyBase = product.type === 'GRANEL' ? safeQty : safeQty * packFactor
-
-      return [
-        ...prev,
-        {
-          barcode: product.barcode,
-          sku: product.sku,
-          name: product.name,
-          unit_base: product.unit_base,
-          type: product.type,
-          pack_factor: product.pack_factor,
-          price_gross: effectivePrice,
-          base_price_gross: product.price_gross,
-          price_source: source,
-          remate_label: remate?.label ?? null,
-          tax_rate: product.tax_rate,
-          qty: safeQty,
-          qty_base: qtyBase,
-          display_unit: displayUnit
-        }
-      ]
+      return [...prev, {
+        product_id: product.id,
+        barcode: product.barcode,
+        sku: product.sku,
+        name: product.name,
+        unit_base: product.unit_base,
+        type: product.type,
+        pack_factor: product.pack_factor,
+        price_gross: price,
+        base_price_gross: product.precio_venta,
+        price_source,
+        remate_label: remate?.label ?? null,
+        tax_rate: product.tax_rate,
+        qty,
+        qty_base,
+        display_unit: product.type === 'PAQUETE' ? 'paquete' : product.unit_base
+      }]
     })
   }
 
   const handleScan = async () => {
     const code = barcode.trim()
     if (!code) return
-
-    const local = products.find((p) => p.barcode === code)
-    let product: Product | undefined = local
-
-    if (!product && !isLikelyBarcode(code) && scanSuggestions.length > 0) {
-      product = scanSuggestions[0]
-    }
-
+    let product = products.find((p) => p.barcode === code)
+    if (!product && !isLikelyBarcode(code) && scanSuggestions.length > 0) product = scanSuggestions[0]
     if (!product && online) {
       try {
-        product = (await api.lookupProduct(code)) ?? undefined
+        product = (await api.lookupProduct(tenantId, code)) ?? undefined
       } catch {
         product = undefined
       }
     }
-
     if (!product) {
       setAlert('Producto no encontrado.')
       setQuickAddAvailable(true)
-      setQuickAddOpen(false)
       return
     }
-
     setAlert(null)
     setQuickAddAvailable(false)
-    setQuickAddOpen(false)
-
-    if (product.type === 'GRANEL') {
-      setGranelProduct(product)
-      setBarcode('')
-      return
-    }
-
-    addToCart(product, 1)
-    setBarcode('')
-    focusBarcode()
-  }
-
-  const addSuggestionToCart = (product: Product) => {
-    setAlert(null)
-    setQuickAddAvailable(false)
-    setQuickAddOpen(false)
     if (product.type === 'GRANEL') {
       setGranelProduct(product)
       setBarcode('')
@@ -238,62 +154,25 @@ export default function PosScreen({
   }
 
   const updateQty = (barcodeValue: string, input: number | string) => {
-    setCart((prev) => {
-      const raw = String(input ?? '').trim().replace(',', '.')
-      const q = Number(raw)
-
-      if (raw === '') return prev
-      if (!Number.isFinite(q)) return prev
-      if (q <= 0) return prev.filter((it) => it.barcode !== barcodeValue)
-
-      return prev.map((it) => {
-        if (it.barcode !== barcodeValue) return it
-
-        const isPiece = it.display_unit === 'pza'
-        const qty = isPiece ? Math.round(q) : q
-        const packFactor = it.pack_factor ?? 1
-        const qty_base = it.type === 'GRANEL' ? qty : qty * packFactor
-
-        return { ...it, qty, qty_base }
-      })
-    })
-  }
-
-  const removeItem = (barcodeValue: string) => {
-    setCart((prev) => prev.filter((item) => item.barcode !== barcodeValue))
+    const raw = String(input ?? '').trim().replace(',', '.')
+    const q = Number(raw)
+    if (!Number.isFinite(q)) return
+    setCart((prev) => q <= 0 ? prev.filter((item) => item.barcode !== barcodeValue) : prev.map((item) => {
+      if (item.barcode !== barcodeValue) return item
+      const qty = item.display_unit === 'pza' ? Math.round(q) : q
+      const qty_base = item.type === 'GRANEL' ? qty : qty * (item.pack_factor ?? 1)
+      return { ...item, qty, qty_base }
+    }))
   }
 
   const confirmSale = () => {
-    if (cart.length === 0) {
-      setAlert('Carrito vacio.')
-      return
-    }
-    if (!payment) {
-      setAlert('Selecciona metodo de pago.')
-      return
-    }
-    if (payment === 'EFECTIVO' && cashReceived < total) {
-      setAlert('Monto recibido insuficiente para pago en efectivo.')
-      return
-    }
-
-    const normalizedItems = cart
-      .map((item) => {
-        const qty = Number(item.qty)
-        if (!Number.isFinite(qty) || qty <= 0) return null
-        const packFactor = item.pack_factor ?? 1
-        const qty_base = item.type === 'GRANEL' ? qty : qty * packFactor
-        return { ...item, qty, qty_base }
-      })
-      .filter((item): item is CartItem => Boolean(item))
-
-    if (normalizedItems.length === 0) {
-      setAlert('Carrito vacio.')
-      return
-    }
-
+    if (!cart.length) return setAlert('Carrito vacio.')
+    if (!payment) return setAlert('Selecciona metodo de pago.')
+    if (payment === 'EFECTIVO' && cashReceived < total) return setAlert('Monto recibido insuficiente.')
     const payload: SalePayload = {
       local_id: uuid(),
+      tenant_id: tenantId,
+      usuario_id: userId,
       captured_at: nowIso(),
       user: currentUser,
       sale_type: 'VENTA',
@@ -301,81 +180,62 @@ export default function PosScreen({
       amount_received: payment === 'EFECTIVO' ? cashReceived : undefined,
       change_amount: payment === 'EFECTIVO' ? cashChange : undefined,
       fiscal_data: fiscalData,
-      items: normalizedItems.map((item) => ({
-        barcode: item.barcode,
-        sku: item.sku,
-        name: item.name,
-        qty: item.qty,
-        unit_base: item.unit_base,
-        qty_base: item.qty_base,
-        price_gross: item.price_gross,
-        base_price_gross: item.base_price_gross,
-        price_source: item.price_source,
-        remate_label: item.remate_label ?? null,
-        tax_rate: item.tax_rate,
-        type: item.type,
-        pack_factor: item.pack_factor
-      }))
+      items: cart.map((item) => ({ ...item }))
     }
-
     onConfirmSale(payload)
     setCart([])
     setPayment(null)
     setCashReceivedText('')
     setFiscalData({ wants_invoice: false })
     setAlert(null)
-    focusBarcode()
   }
 
   const handleQuickAdd = () => {
-    if (!quickName.trim()) {
-      setAlert('Nombre requerido en alta rapida.')
-      return
-    }
-
     const price = Number.parseFloat(quickPrice.replace(',', '.'))
-    if (!Number.isFinite(price) || price <= 0) {
-      setAlert('Precio invalido.')
-      return
-    }
-
-    const newProduct: Product = {
+    if (!quickName.trim()) return setAlert('Nombre requerido en alta rapida.')
+    if (!Number.isFinite(price) || price <= 0) return setAlert('Precio invalido.')
+    const timestamp = nowIso()
+    const product: Product = {
+      id: uuid(),
+      tenant_id: tenantId,
       barcode: barcode.trim() || `LOCAL-${Date.now()}`,
       sku: `LOCAL-${Date.now()}`,
       name: quickName.trim(),
+      categoria: 'Alta rapida',
       unit_base: quickUnit,
       type: quickType,
       pack_factor: quickType === 'PAQUETE' ? 1 : null,
-      price_gross: price,
+      precio_compra: Number((price * 0.7).toFixed(2)),
+      precio_venta: price,
       tax_rate: 0.16,
+      stock_actual: null,
+      stock_minimo: 1,
+      inventario_confirmado: false,
       active: true,
-      stock_snapshot: null,
       remate_enabled: false,
       remate_type: null,
       remate_value: null,
       remate_start_at: null,
       remate_end_at: null,
       remate_marked_at: null,
-      remate_marked_by: null
+      remate_marked_by: null,
+      created_at: timestamp,
+      updated_at: timestamp
     }
-
-    onQuickAddProduct(newProduct)
+    onQuickAddProduct(product)
     setQuickAddOpen(false)
     setQuickAddAvailable(false)
     setQuickName('')
     setQuickPrice('')
-    addToCart(newProduct, 1)
+    addToCart(product, 1)
     setBarcode('')
-    focusBarcode()
   }
 
   return (
-    <div className="screen" onFocusCapture={handleFocusCapture} onBlurCapture={handleBlurCapture}>
+    <div className="screen">
       <header className="header">
         <div className="status">
-          <span className={online ? 'pill online' : 'pill offline'}>
-            {online ? 'Online' : 'Offline'}
-          </span>
+          <span className={online ? 'pill online' : 'pill offline'}>{online ? 'Online' : 'Offline'}</span>
           <span className="pill">Pendientes: {pendingCount}</span>
         </div>
         <div className="header-actions">
@@ -387,32 +247,20 @@ export default function PosScreen({
         </div>
       </header>
 
-      {!catalogAvailable && (
-        <div className="alert alert-error">Catalogo no disponible, sincroniza cuando tengas internet.</div>
-      )}
+      {!catalogAvailable && <div className="alert alert-error">Catalogo no disponible.</div>}
 
       <section className="scan-zone">
         <div>
           <label>Barcode / Nombre / SKU</label>
-          <input
-            ref={inputRef}
-            autoFocus
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleScan()}
-          />
+          <input ref={inputRef} autoFocus value={barcode} onChange={(e) => setBarcode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleScan()} />
           {scanSuggestions.length > 0 && (
             <div className="suggestions">
               {scanSuggestions.map((item) => (
-                <button
-                  key={item.barcode}
-                  className="suggestion-item"
-                  onClick={() => addSuggestionToCart(item)}
-                >
+                <button key={item.id} className="suggestion-item" onClick={() => item.type === 'GRANEL' ? setGranelProduct(item) : addToCart(item, 1)}>
                   <span>{item.name}</span>
                   <span className="muted">{item.sku}</span>
-                  <span>{formatMoney(item.price_gross)}</span>
-                  <span className="muted">Stock: {item.stock_snapshot ?? 'N/A'}</span>
+                  <span>{formatMoney(item.precio_venta)}</span>
+                  <span className="muted">Stock: {item.stock_actual ?? 'N/A'}</span>
                 </button>
               ))}
             </div>
@@ -424,52 +272,36 @@ export default function PosScreen({
       <div className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h3>Catalogo rapido</h3>
-          <input
-            style={{ maxWidth: 320 }}
-            value={catalogSearch}
-            onChange={(e) => setCatalogSearch(e.target.value)}
-            placeholder="Buscar producto"
-          />
+          <input style={{ maxWidth: 320 }} value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)} placeholder="Buscar producto" />
         </div>
         <table className="cart-table">
           <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Precio</th>
-              <th>Remate</th>
-              <th>Acciones</th>
-            </tr>
+            <tr><th>Producto</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             {catalogPreview.map((product) => {
               const remate = getRematePrice(product)
               return (
-                <tr key={product.barcode}>
+                <tr key={product.id}>
                   <td>{product.name}</td>
-                  <td>{formatMoney(product.price_gross)}</td>
+                  <td>{formatMoney(product.precio_venta)}</td>
                   <td>
-                    {remate ? <span className="chip remate">{remate.label}: {formatMoney(remate.price)}</span> : <span className="muted">No</span>}
+                    {product.stock_actual !== null && product.stock_actual <= product.stock_minimo ? <span className="chip chip-danger">Stock bajo</span> : <span className="muted">{product.inventario_confirmado ? 'Inventario confirmado' : 'Inventario no confirmado'}</span>}
+                    {remate && <span className="chip remate">{remate.label}</span>}
                   </td>
                   <td className="row">
-                    <button className="btn primary" onClick={() => addSuggestionToCart(product)}>Agregar</button>
-                    <button className="btn ghost" onClick={() => setRemateProduct(product)}>Marcar remate</button>
+                    <button className="btn primary" onClick={() => product.type === 'GRANEL' ? setGranelProduct(product) : addToCart(product, 1)}>Agregar</button>
+                    <button className="btn ghost" onClick={() => setRemateProduct(product)}>Remate</button>
                   </td>
                 </tr>
               )
             })}
-            {catalogPreview.length === 0 && (
-              <tr><td colSpan={4} className="muted center">Sin resultados</td></tr>
-            )}
+            {catalogPreview.length === 0 && <tr><td colSpan={4} className="muted center">Sin resultados</td></tr>}
           </tbody>
         </table>
       </div>
 
-      {alert && (
-        <div className="alert alert-error">
-          {alert}
-          {quickAddAvailable && <button className="btn ghost" onClick={() => setQuickAddOpen(true)}>Alta rapida</button>}
-        </div>
-      )}
+      {alert && <div className="alert alert-error">{alert}{quickAddAvailable && <button className="btn ghost" onClick={() => setQuickAddOpen(true)}>Alta rapida</button>}</div>}
 
       {quickAddOpen && (
         <div className="card">
@@ -478,129 +310,44 @@ export default function PosScreen({
             <input placeholder="Nombre" value={quickName} onChange={(e) => setQuickName(e.target.value)} />
             <input placeholder="Precio" value={quickPrice} onChange={(e) => setQuickPrice(e.target.value)} />
             <select value={quickUnit} onChange={(e) => setQuickUnit(e.target.value as Product['unit_base'])}>
-              <option value="pza">pza</option>
-              <option value="kg">kg</option>
-              <option value="m">m</option>
-              <option value="lt">lt</option>
-              <option value="ml">ml</option>
+              <option value="pza">pza</option><option value="kg">kg</option><option value="m">m</option><option value="lt">lt</option><option value="ml">ml</option>
             </select>
             <select value={quickType} onChange={(e) => setQuickType(e.target.value as Product['type'])}>
-              <option value="PIEZA">PIEZA</option>
-              <option value="GRANEL">GRANEL</option>
-              <option value="PAQUETE">PAQUETE</option>
+              <option value="PIEZA">PIEZA</option><option value="GRANEL">GRANEL</option><option value="PAQUETE">PAQUETE</option>
             </select>
             <button className="btn primary" onClick={handleQuickAdd}>Guardar</button>
           </div>
         </div>
       )}
 
-      <CartTable items={cart} onUpdateQty={updateQty} onRemove={removeItem} />
+      <CartTable items={cart} onUpdateQty={updateQty} onRemove={(code) => setCart((prev) => prev.filter((item) => item.barcode !== code))} />
 
       <div className="totals">
         <div className="total">Total: {formatMoney(total)}</div>
         <div className="payment">
-          <button
-            className={payment === 'EFECTIVO' ? 'btn primary' : 'btn ghost'}
-            onClick={() => {
-              setPendingPayment('EFECTIVO')
-              setInvoiceModalOpen(true)
-            }}
-          >
-            Efectivo
-          </button>
-          <button
-            className={payment === 'TARJETA' ? 'btn primary' : 'btn ghost'}
-            onClick={() => {
-              setPendingPayment('TARJETA')
-              setInvoiceModalOpen(true)
-              setCashReceivedText('')
-            }}
-          >
-            Tarjeta
-          </button>
+          <button className={payment === 'EFECTIVO' ? 'btn primary' : 'btn ghost'} onClick={() => { setPendingPayment('EFECTIVO'); setInvoiceModalOpen(true) }}>Efectivo</button>
+          <button className={payment === 'TARJETA' ? 'btn primary' : 'btn ghost'} onClick={() => { setPendingPayment('TARJETA'); setInvoiceModalOpen(true); setCashReceivedText('') }}>Tarjeta</button>
         </div>
         {payment === 'EFECTIVO' && (
           <div className="card cash-box">
             <label>Recibido</label>
-            <input
-              value={cashReceivedText}
-              onChange={(e) => setCashReceivedText(e.target.value)}
-              placeholder="0.00"
-            />
+            <input value={cashReceivedText} onChange={(e) => setCashReceivedText(e.target.value)} placeholder="0.00" />
             <div className="muted">Cambio: {formatMoney(cashChange)}</div>
           </div>
         )}
         <div className="actions">
           <button className="btn ghost" onClick={() => setCart([])}>Cancelar</button>
-          <button className="btn warning" onClick={() => setPorPagarOpen(true)} disabled={cart.length === 0}>
-            Convertir a Por pagar
-          </button>
+          <button className="btn warning" onClick={() => setPorPagarOpen(true)} disabled={!cart.length}>Convertir a Por pagar</button>
           <button className="btn success" onClick={confirmSale}>Confirmar venta</button>
         </div>
       </div>
 
       <RecentSalesHistory sales={recentSales} />
 
-      <GranelModal
-        isOpen={Boolean(granelProduct)}
-        productName={granelProduct?.name ?? ''}
-        unit={granelProduct?.unit_base ?? ''}
-        onCancel={() => {
-          setGranelProduct(null)
-          focusBarcode()
-        }}
-        onConfirm={(qty) => {
-          if (granelProduct) addToCart(granelProduct, qty)
-          setGranelProduct(null)
-          setBarcode('')
-          focusBarcode()
-        }}
-      />
-
-      <RemateModal
-        isOpen={Boolean(remateProduct)}
-        product={remateProduct}
-        currentUser={currentUser}
-        onClose={() => setRemateProduct(null)}
-        onSave={async (product) => {
-          await onUpdateProduct(product)
-          setRemateProduct(null)
-          setAlert('Remate actualizado.')
-        }}
-      />
-
-      <InvoicePromptModal
-        isOpen={invoiceModalOpen}
-        paymentLabel={pendingPayment === 'EFECTIVO' ? 'Efectivo' : 'Tarjeta'}
-        initial={fiscalData}
-        onClose={() => setInvoiceModalOpen(false)}
-        onConfirm={(data) => {
-          setFiscalData(data)
-          setPayment(pendingPayment)
-          if (pendingPayment !== 'EFECTIVO') setCashReceivedText('')
-          setInvoiceModalOpen(false)
-        }}
-      />
-
-      <PorPagarModal
-        isOpen={porPagarOpen}
-        total={total}
-        onClose={() => setPorPagarOpen(false)}
-        onConfirm={async (data) => {
-          await onConvertToPorPagar({
-            cart,
-            customer_name: data.customer_name,
-            customer_phone: data.customer_phone,
-            anticipo: data.anticipo
-          })
-          setPorPagarOpen(false)
-          setCart([])
-          setPayment(null)
-          setFiscalData({ wants_invoice: false })
-          setAlert(null)
-          focusBarcode()
-        }}
-      />
+      <GranelModal isOpen={Boolean(granelProduct)} productName={granelProduct?.name ?? ''} unit={granelProduct?.unit_base ?? ''} onCancel={() => setGranelProduct(null)} onConfirm={(qty) => { if (granelProduct) addToCart(granelProduct, qty); setGranelProduct(null); setBarcode(''); focusBarcode() }} />
+      <RemateModal isOpen={Boolean(remateProduct)} product={remateProduct} currentUser={currentUser} onClose={() => setRemateProduct(null)} onSave={async (product) => { await onUpdateProduct(product); setRemateProduct(null) }} />
+      <InvoicePromptModal isOpen={invoiceModalOpen} paymentLabel={pendingPayment === 'EFECTIVO' ? 'Efectivo' : 'Tarjeta'} initial={fiscalData} onClose={() => setInvoiceModalOpen(false)} onConfirm={(data) => { setFiscalData(data); setPayment(pendingPayment); if (pendingPayment !== 'EFECTIVO') setCashReceivedText(''); setInvoiceModalOpen(false) }} />
+      <PorPagarModal isOpen={porPagarOpen} total={total} onClose={() => setPorPagarOpen(false)} onConfirm={async (data) => { await onConvertToPorPagar({ cart, ...data }); setPorPagarOpen(false); setCart([]); setPayment(null); setFiscalData({ wants_invoice: false }); }} />
     </div>
   )
 }

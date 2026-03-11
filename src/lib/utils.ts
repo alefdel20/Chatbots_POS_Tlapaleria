@@ -33,7 +33,7 @@ export const getRematePrice = (product: Product): { price: number; label: string
 
   if (product.remate_type === 'PORCENTAJE') {
     const percent = Math.max(0, Math.min(100, product.remate_value))
-    const price = Math.max(0.01, Number((product.price_gross * (1 - percent / 100)).toFixed(2)))
+    const price = Math.max(0.01, Number((product.precio_venta * (1 - percent / 100)).toFixed(2)))
     return { price, label: `Remate ${percent}%` }
   }
 

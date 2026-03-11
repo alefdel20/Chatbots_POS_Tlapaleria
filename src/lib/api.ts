@@ -1,78 +1,58 @@
-﻿import { sampleProducts } from './seed'
-import { ContingencyBatchPayload, SalePayload, UndoLastSalePayload } from './types'
+import { loadSession } from './auth'
+import { apiUrl } from './http'
+import { ContingencyBatchPayload, Product, SalePayload, UndoLastSalePayload } from './types'
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const getHeaders = () => {
+  const session = loadSession()
+  return {
+    'Content-Type': 'application/json',
+    ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {})
+  }
+}
 
-const getStore = (key: string): Set<string> => {
-  const raw = localStorage.getItem(key)
-  if (!raw) return new Set()
+const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await fetch(apiUrl(path), { ...init, headers: { ...getHeaders(), ...(init?.headers ?? {}) } })
+  const raw = await response.text()
+  let data: any = null
   try {
-    const parsed = JSON.parse(raw)
-    return new Set(Array.isArray(parsed) ? parsed : [])
+    data = raw ? JSON.parse(raw) : null
   } catch {
-    return new Set()
+    data = null
   }
-}
-
-const setStore = (key: string, values: Set<string>) => {
-  localStorage.setItem(key, JSON.stringify(Array.from(values)))
-}
-
-const assertOnline = () => {
-  if (!navigator.onLine) {
-    throw new Error('Sin conexión a internet.')
-  }
+  if (!response.ok || data?.ok === false) throw new Error(data?.error ?? `HTTP ${response.status}`)
+  return data as T
 }
 
 export const api = {
-  async fetchProducts() {
-    assertOnline()
-    await delay(400)
-    return sampleProducts
+  async fetchProducts(tenantId: string) {
+    const params = new URLSearchParams({ tenant_id: tenantId })
+    const result = await request<{ ok: true; data: Product[] }>(`/api/products?${params.toString()}`)
+    return result.data
   },
 
-  async lookupProduct(barcode: string) {
-    assertOnline()
-    await delay(150)
-    return sampleProducts.find((p) => p.barcode === barcode) ?? null
+  async lookupProduct(tenantId: string, barcode: string) {
+    const params = new URLSearchParams({ tenant_id: tenantId })
+    const result = await request<{ ok: true; data: Product | null }>(`/api/products/lookup/${encodeURIComponent(barcode)}?${params.toString()}`)
+    return result.data
   },
 
   async postSale(payload: SalePayload) {
-    assertOnline()
-    await delay(350)
-    const key = 'mock_sales'
-    const store = getStore(key)
-    if (store.has(payload.local_id)) {
-      return { ok: false, error: 'Duplicado', duplicate: true }
-    }
-    store.add(payload.local_id)
-    setStore(key, store)
-    return { ok: true, server_sale_id: `S-${Date.now()}`, folio: `VTA-${Date.now()}` }
+    const result = await request<{ ok: true; data: { id: string }; folio: string }>('/api/sales', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+    return { ok: true, server_sale_id: result.data.id, folio: result.folio }
   },
 
   async postBatch(payload: ContingencyBatchPayload) {
-    assertOnline()
-    await delay(350)
-    const key = 'mock_batches'
-    const store = getStore(key)
-    if (store.has(payload.local_batch_id)) {
-      return { ok: false, error: 'Duplicado', duplicate: true }
-    }
-    store.add(payload.local_batch_id)
-    setStore(key, store)
-    return { ok: true, server_batch_id: `B-${Date.now()}`, folio: payload.folio_lote }
+    return { ok: true, duplicate: false, server_batch_id: payload.local_batch_id, folio: payload.folio_lote }
   },
 
   async postUndo(payload: UndoLastSalePayload) {
-    assertOnline()
-    await delay(250)
-    const key = 'mock_undo'
-    const store = getStore(key)
-    if (store.has(payload.local_id)) {
-      return { ok: false, error: 'Duplicado', duplicate: true }
-    }
-    store.add(payload.local_id)
-    setStore(key, store)
+    await request<{ ok: true }>(`/api/sales/${payload.last_sale_id}/void`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
     return { ok: true }
   }
 }

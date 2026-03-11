@@ -1,124 +1,166 @@
-﻿import { Product } from './types'
+import { Product } from './types'
 
-export const sampleProducts: Product[] = [
+type SeedProduct = Omit<Product, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
+
+export const sampleProducts: SeedProduct[] = [
   {
     barcode: '7501000111111',
     sku: 'CLAV-001',
     name: 'Clavo 1" (bolsa 100 pzas)',
+    categoria: 'Ferreteria',
     unit_base: 'pza',
     type: 'PAQUETE',
     pack_factor: 100,
-    price_gross: 89.0,
+    precio_compra: 62,
+    precio_venta: 89,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 12
+    stock_actual: 12,
+    stock_minimo: 4,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000222222',
     sku: 'TORN-001',
     name: 'Tornillo 1/2" (pieza)',
+    categoria: 'Ferreteria',
     unit_base: 'pza',
     type: 'PIEZA',
     pack_factor: null,
-    price_gross: 3.5,
+    precio_compra: 1.9,
+    precio_venta: 3.5,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 240
+    stock_actual: 240,
+    stock_minimo: 40,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000333333',
     sku: 'CEM-001',
     name: 'Cemento gris (kg)',
+    categoria: 'Construccion',
     unit_base: 'kg',
     type: 'GRANEL',
     pack_factor: null,
-    price_gross: 18.0,
+    precio_compra: 12.5,
+    precio_venta: 18,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 550
+    stock_actual: 550,
+    stock_minimo: 60,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000444444',
     sku: 'CABL-001',
     name: 'Cable THW Cal.12 (m)',
+    categoria: 'Electrico',
     unit_base: 'm',
     type: 'GRANEL',
     pack_factor: null,
-    price_gross: 22.5,
+    precio_compra: 15.5,
+    precio_venta: 22.5,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 120
+    stock_actual: 120,
+    stock_minimo: 20,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000555555',
     sku: 'PINT-001',
     name: 'Pintura blanca 1L',
+    categoria: 'Pinturas',
     unit_base: 'lt',
     type: 'PIEZA',
     pack_factor: null,
-    price_gross: 119.0,
+    precio_compra: 82,
+    precio_venta: 119,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 30
+    stock_actual: 30,
+    stock_minimo: 6,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000666666',
     sku: 'BRO-001',
     name: 'Brocha 2"',
+    categoria: 'Pinturas',
     unit_base: 'pza',
     type: 'PIEZA',
     pack_factor: null,
-    price_gross: 35.0,
+    precio_compra: 21,
+    precio_venta: 35,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 45
+    stock_actual: 45,
+    stock_minimo: 8,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000777777',
     sku: 'LIJ-001',
     name: 'Lija grano 120 (paquete 5)',
+    categoria: 'Pinturas',
     unit_base: 'pza',
     type: 'PAQUETE',
     pack_factor: 5,
-    price_gross: 42.0,
+    precio_compra: 28,
+    precio_venta: 42,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 20
+    stock_actual: 20,
+    stock_minimo: 5,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000888888',
     sku: 'PEG-001',
     name: 'Pegamento PVC 250ml',
+    categoria: 'Plomeria',
     unit_base: 'ml',
     type: 'PIEZA',
     pack_factor: null,
-    price_gross: 58.0,
+    precio_compra: 37,
+    precio_venta: 58,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 18
+    stock_actual: null,
+    stock_minimo: 4,
+    inventario_confirmado: false
   },
   {
     barcode: '7501000999999',
     sku: 'TUER-001',
     name: 'Tuerca 1/2" (bolsa 50 pzas)',
+    categoria: 'Ferreteria',
     unit_base: 'pza',
     type: 'PAQUETE',
     pack_factor: 50,
-    price_gross: 65.0,
+    precio_compra: 49,
+    precio_venta: 65,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 15
+    stock_actual: 15,
+    stock_minimo: 4,
+    inventario_confirmado: true
   },
   {
     barcode: '7501000101016',
     sku: 'CINT-001',
     name: 'Cinta aislante 18m',
+    categoria: 'Electrico',
     unit_base: 'pza',
     type: 'PIEZA',
     pack_factor: null,
-    price_gross: 29.0,
+    precio_compra: 18,
+    precio_venta: 29,
     tax_rate: 0.16,
     active: true,
-    stock_snapshot: 90
+    stock_actual: 90,
+    stock_minimo: 10,
+    inventario_confirmado: true
   }
 ]

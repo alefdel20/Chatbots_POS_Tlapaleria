@@ -1,364 +1,335 @@
-import { Product, PendingQueueItem, PorPagarOrder, Settings } from './types'
-import { sampleProducts } from './seed'
+import { loadSession, saveSession } from './auth'
+import { api } from './api'
+import { apiUrl } from './http'
+import {
+  AuthContextValue,
+  Business,
+  ContingencyBatchPayload,
+  GlobalMetrics,
+  InventoryMovement,
+  PendingQueueItem,
+  PorPagarOrder,
+  Product,
+  SalePayload,
+  SaleRecord,
+  Settings,
+  TenantMetrics,
+  UndoLastSalePayload,
+  UserRecord
+} from './types'
+import { nowIso, uuid } from './utils'
 
-const DB_NAME = 'pos_db'
-const DB_VERSION = 4
-
-const STORE_PRODUCTS = 'products'
-const STORE_PENDING = 'pending_queue'
-const STORE_SETTINGS = 'settings'
-const STORE_META = 'meta'
-const STORE_SALES = 'sales'
-const STORE_POR_PAGAR = 'por_pagar'
-
-let dbPromise: Promise<IDBDatabase> | null = null
-
-const withRemateDefaults = (product: Product): Product => ({
-  ...product,
-  remate_enabled: product.remate_enabled ?? false,
-  remate_type: product.remate_type ?? null,
-  remate_value: product.remate_value ?? null,
-  remate_start_at: product.remate_start_at ?? null,
-  remate_end_at: product.remate_end_at ?? null,
-  remate_marked_at: product.remate_marked_at ?? null,
-  remate_marked_by: product.remate_marked_by ?? null
-})
-
-const withPorPagarDefaults = (order: PorPagarOrder): PorPagarOrder => ({
-  ...order,
-  payment_history: order.payment_history ?? [],
-  canceled_at: order.canceled_at ?? null,
-  delivered_at: order.delivered_at ?? null
-})
-
-const openDb = (): Promise<IDBDatabase> => {
-  if (dbPromise) return dbPromise
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onupgradeneeded = (event) => {
-      const db = request.result
-      const tx = request.transaction
-      if (!db.objectStoreNames.contains(STORE_PRODUCTS)) {
-        db.createObjectStore(STORE_PRODUCTS, { keyPath: 'barcode' })
-      }
-      if (!db.objectStoreNames.contains(STORE_PENDING)) {
-        db.createObjectStore(STORE_PENDING, { keyPath: 'id' })
-      }
-      if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
-        db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' })
-      }
-      if (!db.objectStoreNames.contains(STORE_META)) {
-        db.createObjectStore(STORE_META, { keyPath: 'key' })
-      }
-      if (!db.objectStoreNames.contains(STORE_SALES)) {
-        db.createObjectStore(STORE_SALES, { keyPath: 'id' })
-      }
-      if (!db.objectStoreNames.contains(STORE_POR_PAGAR)) {
-        db.createObjectStore(STORE_POR_PAGAR, { keyPath: 'id' })
-      }
-
-      const oldVersion = (event as IDBVersionChangeEvent).oldVersion
-      if (oldVersion < 2 && tx && db.objectStoreNames.contains(STORE_PRODUCTS)) {
-        const productsStore = tx.objectStore(STORE_PRODUCTS)
-        const cursorReq = productsStore.openCursor()
-        cursorReq.onsuccess = () => {
-          const cursor = cursorReq.result
-          if (!cursor) return
-          cursor.update(withRemateDefaults(cursor.value as Product))
-          cursor.continue()
-        }
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-  return dbPromise
-}
-
-const withStore = async <T>(storeName: string, mode: IDBTransactionMode, fn: (store: IDBObjectStore) => void): Promise<T> => {
-  const db = await openDb()
-  return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(storeName, mode)
-    const store = tx.objectStore(storeName)
-    fn(store)
-    tx.oncomplete = () => resolve(undefined as T)
-    tx.onerror = () => reject(tx.error)
-  })
-}
-
-const getAll = async <T>(storeName: string): Promise<T[]> => {
-  const db = await openDb()
-  return new Promise<T[]>((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly')
-    const store = tx.objectStore(storeName)
-    const req = store.getAll()
-    req.onsuccess = () => resolve(req.result as T[])
-    req.onerror = () => reject(req.error)
-  })
-}
-
-const getByKey = async <T>(storeName: string, key: IDBValidKey): Promise<T | null> => {
-  const db = await openDb()
-  return new Promise<T | null>((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly')
-    const store = tx.objectStore(storeName)
-    const req = store.get(key)
-    req.onsuccess = () => resolve((req.result as T) ?? null)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-const putValue = async <T>(storeName: string, value: T): Promise<void> => {
-  await withStore<void>(storeName, 'readwrite', (store) => {
-    store.put(value as never)
-  })
-}
-
-const deleteValue = async (storeName: string, key: IDBValidKey): Promise<void> => {
-  await withStore<void>(storeName, 'readwrite', (store) => {
-    store.delete(key)
-  })
+const key = {
+  settings: 'pos_settings_v3',
+  meta: 'pos_meta_v3',
+  pending: 'pos_pending_v3',
+  porPagar: 'pos_por_pagar_v3'
 }
 
 export const dbEvents = new EventTarget()
 const emit = (name: string) => dbEvents.dispatchEvent(new Event(name))
 
-export const initDb = async (): Promise<void> => {
-  await openDb()
-  const products = await getAll<Product>(STORE_PRODUCTS)
-  if (products.length === 0) {
-    await upsertProducts(sampleProducts)
-  } else {
-    await upsertProducts(products.map(withRemateDefaults))
+const readJson = <T>(storageKey: string, fallback: T): T => {
+  const raw = localStorage.getItem(storageKey)
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
   }
-  const settings = await getSettings()
-  if (!settings) {
+}
+
+const writeJson = <T>(storageKey: string, value: T) => {
+  localStorage.setItem(storageKey, JSON.stringify(value))
+}
+
+const authHeaders = () => {
+  const session = loadSession()
+  return {
+    'Content-Type': 'application/json',
+    ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {})
+  }
+}
+
+const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await fetch(apiUrl(path), { ...init, headers: { ...authHeaders(), ...(init?.headers ?? {}) } })
+  const raw = await response.text()
+  let data: any = null
+  try {
+    data = raw ? JSON.parse(raw) : null
+  } catch {
+    data = null
+  }
+  if (!response.ok || data?.ok === false) {
+    throw new Error(data?.error ?? `HTTP ${response.status}`)
+  }
+  return data as T
+}
+
+export const initDb = async () => {
+  if (!getSettings()) {
     await setSettings({ user: 'CAJA1', admin_pin: '1234' })
   }
-  const orders = await getAll<PorPagarOrder>(STORE_POR_PAGAR)
-  if (orders.length > 0) {
-    await withStore<void>(STORE_POR_PAGAR, 'readwrite', (store) => {
-      for (const order of orders) {
-        store.put(withPorPagarDefaults(order))
-      }
-    })
+}
+
+export const authenticateUser = async (email: string, password: string): Promise<AuthContextValue | null> => {
+  const result = await request<{ ok: true; token: string; user: UserRecord; business: Business }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  })
+  saveSession({ user_id: result.user.id, tenant_id: result.user.tenant_id, token: result.token, issued_at: nowIso() })
+  return { session: loadSession(), user: result.user, business: result.business }
+}
+
+export const restoreAuth = async (): Promise<AuthContextValue> => {
+  const session = loadSession()
+  if (!session) return { session: null, user: null, business: null }
+  try {
+    const result = await request<{ ok: true; user: UserRecord; business: Business }>('/api/auth/me')
+    return { session, user: result.user, business: result.business }
+  } catch {
+    saveSession(null)
+    return { session: null, user: null, business: null }
   }
 }
 
-export const getProducts = () => getAll<Product>(STORE_PRODUCTS)
-export const getProductByBarcode = (barcode: string) => getByKey<Product>(STORE_PRODUCTS, barcode)
+export const logout = () => saveSession(null)
 
-export const upsertProducts = async (products: Product[]): Promise<void> => {
-  await withStore<void>(STORE_PRODUCTS, 'readwrite', (store) => {
-    for (const product of products) {
-      store.put(withRemateDefaults(product))
+export const getBusinesses = async (_includeSystem = false): Promise<Business[]> => {
+  const result = await request<{ ok: true; data: Business[] }>('/api/businesses')
+  return result.data
+}
+
+export const createBusiness = async (input: Pick<Business, 'nombre' | 'telefono' | 'email' | 'direccion' | 'plan' | 'activo' | 'modulos_activos'>, _actor: UserRecord) => {
+  const result = await request<{ ok: true; data: Business }>('/api/businesses', { method: 'POST', body: JSON.stringify(input) })
+  emit('businesses-changed')
+  return result.data
+}
+
+export const updateBusiness = async (businessId: string, patch: Partial<Pick<Business, 'nombre' | 'telefono' | 'email' | 'direccion' | 'plan' | 'activo' | 'modulos_activos'>>, _actor: UserRecord) => {
+  const result = await request<{ ok: true; data: Business }>(`/api/businesses/${businessId}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  emit('businesses-changed')
+  return result.data
+}
+
+export const getUsers = async (): Promise<UserRecord[]> => {
+  const result = await request<{ ok: true; data: UserRecord[] }>('/api/users')
+  return result.data
+}
+
+export const getUsersByTenant = async (tenantId: string): Promise<UserRecord[]> => {
+  const params = new URLSearchParams({ tenant_id: tenantId })
+  const result = await request<{ ok: true; data: UserRecord[] }>(`/api/users?${params.toString()}`)
+  return result.data
+}
+
+export const createUser = async (input: { tenant_id: string; nombre: string; email: string; password: string; rol: UserRecord['rol']; activo: boolean }, _actor: UserRecord) => {
+  const result = await request<{ ok: true; data: UserRecord }>('/api/users', { method: 'POST', body: JSON.stringify(input) })
+  emit('users-changed')
+  return result.data
+}
+
+export const updateUser = async (userId: string, patch: Partial<Pick<UserRecord, 'nombre' | 'email' | 'rol' | 'activo'>>, _actor: UserRecord) => {
+  const result = await request<{ ok: true; data: UserRecord }>(`/api/users/${userId}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  emit('users-changed')
+  return result.data
+}
+
+export const resetUserPassword = async (userId: string, password: string, _actor: UserRecord) => {
+  await request<{ ok: true }>(`/api/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
+  emit('users-changed')
+  return true
+}
+
+const mapProductFromServer = (row: any): Product => ({
+  id: row.id,
+  tenant_id: row.tenant_id,
+  barcode: row.barcode ?? '',
+  sku: row.sku,
+  name: row.nombre,
+  categoria: row.categoria ?? 'General',
+  unit_base: row.unit_base ?? 'pza',
+  type: row.product_type ?? 'PIEZA',
+  pack_factor: row.pack_factor === null || row.pack_factor === undefined ? null : Number(row.pack_factor),
+  precio_compra: Number(row.precio_compra ?? 0),
+  precio_venta: Number(row.precio_venta),
+  tax_rate: Number(row.tax_rate ?? 0.16),
+  stock_actual: row.stock_actual === null ? null : Number(row.stock_actual),
+  stock_minimo: Number(row.stock_minimo ?? 0),
+  inventario_confirmado: Boolean(row.inventario_confirmado),
+  active: Boolean(row.activo),
+  remate_enabled: Boolean(row.remate_enabled),
+  remate_type: row.remate_type ?? null,
+  remate_value: row.remate_value === null || row.remate_value === undefined ? null : Number(row.remate_value),
+  remate_start_at: row.remate_start_at ?? null,
+  remate_end_at: row.remate_end_at ?? null,
+  remate_marked_at: row.remate_marked_at ?? null,
+  remate_marked_by: row.remate_marked_by ?? null,
+  created_at: row.created_at,
+  updated_at: row.updated_at
+})
+
+const mapProductToServer = (product: Product) => ({
+  tenant_id: product.tenant_id,
+  nombre: product.name,
+  sku: product.sku,
+  barcode: product.barcode,
+  categoria: product.categoria,
+  precio_compra: product.precio_compra,
+  precio_venta: product.precio_venta,
+  stock_actual: product.stock_actual,
+  stock_minimo: product.stock_minimo,
+  inventario_confirmado: product.inventario_confirmado,
+  active: product.active,
+  unit_base: product.unit_base,
+  product_type: product.type,
+  pack_factor: product.pack_factor,
+  tax_rate: product.tax_rate,
+  remate_enabled: product.remate_enabled,
+  remate_type: product.remate_type,
+  remate_value: product.remate_value,
+  remate_start_at: product.remate_start_at,
+  remate_end_at: product.remate_end_at,
+  remate_marked_at: product.remate_marked_at,
+  remate_marked_by: product.remate_marked_by
+})
+
+export const getProducts = async (tenantId: string): Promise<Product[]> => {
+  const params = new URLSearchParams({ tenant_id: tenantId })
+  const result = await request<{ ok: true; data: any[] }>(`/api/products?${params.toString()}`)
+  return result.data.map(mapProductFromServer)
+}
+
+export const upsertProducts = async (products: Product[]) => {
+  for (const product of products) {
+    const payload = mapProductToServer(product)
+    if (product.id) {
+      await request(`/api/products/${product.id}`, { method: 'PUT', body: JSON.stringify(payload) })
+    } else {
+      await request('/api/products', { method: 'POST', body: JSON.stringify(payload) })
     }
-  })
-  emit('products-changed')
-}
-
-export const clearProducts = async (): Promise<void> => {
-  await withStore<void>(STORE_PRODUCTS, 'readwrite', (store) => store.clear())
-  emit('products-changed')
-}
-
-export const getPendingQueue = () => getAll<PendingQueueItem>(STORE_PENDING)
-
-export const addPendingQueueItem = async (item: PendingQueueItem): Promise<void> => {
-  await putValue(STORE_PENDING, item)
-  emit('pending-changed')
-}
-
-export const updatePendingQueueItem = async (item: PendingQueueItem): Promise<void> => {
-  await putValue(STORE_PENDING, item)
-  emit('pending-changed')
-}
-
-export const removePendingQueueItem = async (id: string): Promise<void> => {
-  await deleteValue(STORE_PENDING, id)
-  emit('pending-changed')
-}
-
-export const getSettings = async (): Promise<Settings | null> => {
-  const record = await getByKey<{ key: string; value: Settings }>(STORE_SETTINGS, 'settings')
-  return record?.value ?? null
-}
-
-export const setSettings = async (settings: Settings): Promise<void> => {
-  await putValue(STORE_SETTINGS, { key: 'settings', value: settings })
-}
-
-export const getMeta = async <T>(key: string): Promise<T | null> => {
-  const record = await getByKey<{ key: string; value: T }>(STORE_META, key)
-  return record?.value ?? null
-}
-
-export const setMeta = async <T>(key: string, value: T): Promise<void> => {
-  await putValue(STORE_META, { key, value })
-}
-
-export const setLastSale = async (sale: unknown & { local_id?: string; id?: string }): Promise<void> => {
-  const id = sale.local_id ?? sale.id ?? ''
-  if (!id) return
-  await putValue(STORE_SALES, { id, value: sale })
-  await setMeta('last_sale_id', id)
-}
-
-export const getLastSale = async (): Promise<{ id: string; value: unknown } | null> => {
-  const lastId = await getMeta<string>('last_sale_id')
-  if (!lastId) return null
-  const record = await getByKey<{ id: string; value: unknown }>(STORE_SALES, lastId)
-  return record ?? null
-}
-
-export const clearLastSale = async (): Promise<void> => {
-  await setMeta('last_sale_id', '')
-}
-
-export const nextContingencyFolio = async (): Promise<string> => {
-  const today = new Date()
-  const yyyy = today.getFullYear()
-  const mm = String(today.getMonth() + 1).padStart(2, '0')
-  const dd = String(today.getDate()).padStart(2, '0')
-  const key = `cont-counter-${yyyy}${mm}${dd}`
-  const current = (await getMeta<number>(key)) ?? 0
-  const next = current + 1
-  await setMeta(key, next)
-  return `CONT-${yyyy}${mm}${dd}-${String(next).padStart(3, '0')}`
-}
-
-export const nextPorPagarFolio = async (): Promise<string> => {
-  const today = new Date()
-  const yyyy = today.getFullYear()
-  const mm = String(today.getMonth() + 1).padStart(2, '0')
-  const dd = String(today.getDate()).padStart(2, '0')
-  const key = `porpagar-counter-${yyyy}${mm}${dd}`
-  const current = (await getMeta<number>(key)) ?? 0
-  const next = current + 1
-  await setMeta(key, next)
-  return `PP-${yyyy}${mm}${dd}-${String(next).padStart(3, '0')}`
-}
-
-export const getPorPagarList = () => getAll<PorPagarOrder>(STORE_POR_PAGAR)
-export const getPorPagarById = (id: string) => getByKey<PorPagarOrder>(STORE_POR_PAGAR, id)
-
-export const createPorPagarOrder = async (order: PorPagarOrder): Promise<void> => {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS, STORE_POR_PAGAR], 'readwrite')
-    const productsStore = tx.objectStore(STORE_PRODUCTS)
-    const porPagarStore = tx.objectStore(STORE_POR_PAGAR)
-
-    for (const item of order.items) {
-      const req = productsStore.get(item.barcode)
-      req.onsuccess = () => {
-        const product = req.result as Product | undefined
-        if (!product || product.stock_snapshot === null) return
-        const nextStock = Math.max(0, product.stock_snapshot - item.qty_base)
-        productsStore.put({ ...product, stock_snapshot: nextStock })
-      }
-    }
-
-    porPagarStore.put(withPorPagarDefaults(order))
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-  emit('products-changed')
-  emit('por-pagar-changed')
-}
-
-export const addPorPagarPayment = async (
-  orderId: string,
-  payment: {
-    id: string
-    amount: number
-    method: 'EFECTIVO' | 'TARJETA'
-    captured_at: string
-    received_amount?: number
-    change_amount?: number
   }
-): Promise<void> => {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_POR_PAGAR, 'readwrite')
-    const store = tx.objectStore(STORE_POR_PAGAR)
-    const req = store.get(orderId)
-    req.onsuccess = () => {
-      const raw = req.result as PorPagarOrder | undefined
-      if (!raw) return
-      const order = withPorPagarDefaults(raw)
-      if (order.status !== 'ABIERTO' && order.status !== 'LIQUIDADO') return
-      const amount = Math.max(0, Number(payment.amount.toFixed(2)))
-      const nextBalance = Number((order.balance - amount).toFixed(2))
-      const updatedBalance = nextBalance <= 0 ? 0 : nextBalance
-      const status = updatedBalance === 0 ? 'LIQUIDADO' : 'ABIERTO'
-      store.put({
-        ...order,
-        balance: updatedBalance,
-        status,
-        payment_history: [...order.payment_history, payment]
-      } as PorPagarOrder)
-    }
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-  emit('por-pagar-changed')
-}
-
-export const cancelPorPagarOrder = async (orderId: string, canceledAt: string): Promise<void> => {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS, STORE_POR_PAGAR], 'readwrite')
-    const productsStore = tx.objectStore(STORE_PRODUCTS)
-    const porPagarStore = tx.objectStore(STORE_POR_PAGAR)
-    const req = porPagarStore.get(orderId)
-    req.onsuccess = () => {
-      const raw = req.result as PorPagarOrder | undefined
-      if (!raw) return
-      const order = withPorPagarDefaults(raw)
-      if (order.status !== 'ABIERTO') return
-
-      for (const item of order.items) {
-        const productReq = productsStore.get(item.barcode)
-        productReq.onsuccess = () => {
-          const product = productReq.result as Product | undefined
-          if (!product || product.stock_snapshot === null) return
-          productsStore.put({ ...product, stock_snapshot: product.stock_snapshot + item.qty_base })
-        }
-      }
-
-      porPagarStore.put({
-        ...order,
-        status: 'CANCELADO',
-        canceled_at: canceledAt
-      } as PorPagarOrder)
-    }
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
   emit('products-changed')
-  emit('por-pagar-changed')
 }
 
-export const markPorPagarDelivered = async (orderId: string, deliveredAt: string): Promise<void> => {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_POR_PAGAR, 'readwrite')
-    const store = tx.objectStore(STORE_POR_PAGAR)
-    const req = store.get(orderId)
-    req.onsuccess = () => {
-      const raw = req.result as PorPagarOrder | undefined
-      if (!raw) return
-      const order = withPorPagarDefaults(raw)
-      if (order.status !== 'LIQUIDADO') return
-      store.put({
-        ...order,
-        status: 'ENTREGADO',
-        delivered_at: deliveredAt
-      } as PorPagarOrder)
-    }
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
+export const getSales = async (tenantId: string): Promise<SaleRecord[]> => {
+  const params = new URLSearchParams({ tenant_id: tenantId })
+  const result = await request<{ ok: true; data: SaleRecord[] }>(`/api/sales?${params.toString()}`)
+  return result.data
+}
+
+export const recordSale = async (payload: SalePayload, _actor: UserRecord) => {
+  const result = await request<{ ok: true; data: SaleRecord; folio: string }>('/api/sales', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   })
+  emit('sales-changed')
+  emit('products-changed')
+  emit('inventory-changed')
+  return result.data
+}
+
+export const voidLastSale = async (payload: UndoLastSalePayload, _actor: UserRecord) => {
+  await request(`/api/sales/${payload.last_sale_id}/void`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+  emit('sales-changed')
+  emit('products-changed')
+  emit('inventory-changed')
+  return true
+}
+
+export const adjustInventory = async (input: { tenant_id: string; product_id: string; quantity: number; motivo: string; usuario_id: string; inventario_confirmado?: boolean }) => {
+  await request(`/api/products/${input.product_id}/adjust`, { method: 'POST', body: JSON.stringify(input) })
+  emit('products-changed')
+  emit('inventory-changed')
+  return true
+}
+
+export const getInventoryMovements = async (tenantId: string): Promise<InventoryMovement[]> => {
+  const params = new URLSearchParams({ tenant_id: tenantId })
+  const result = await request<{ ok: true; data: InventoryMovement[] }>(`/api/sales/inventory-movements?${params.toString()}`)
+  return result.data
+}
+
+export const getTenantMetrics = async (tenantId: string): Promise<TenantMetrics> => {
+  const params = new URLSearchParams({ tenant_id: tenantId })
+  const result = await request<{ ok: true; data: TenantMetrics }>(`/api/reports/tenant-metrics?${params.toString()}`)
+  return result.data
+}
+
+export const getGlobalMetrics = async (): Promise<GlobalMetrics> => {
+  const result = await request<{ ok: true; data: GlobalMetrics }>('/api/reports/global-metrics')
+  return result.data
+}
+
+export const getAuditLogs = async () => {
+  const result = await request<{ ok: true; data: any[] }>('/api/reports/audit-logs')
+  return result.data
+}
+
+export const getSettings = async (): Promise<Settings | null> => readJson<Settings | null>(key.settings, null)
+export const setSettings = async (settings: Settings) => writeJson(key.settings, settings)
+export const getMeta = async <T>(metaKey: string): Promise<T | null> => readJson<Record<string, T>>(key.meta, {})[metaKey] ?? null
+export const setMeta = async <T>(metaKey: string, value: T) => {
+  const current = readJson<Record<string, T>>(key.meta, {})
+  current[metaKey] = value
+  writeJson(key.meta, current)
+}
+
+const lastSaleKey = (tenantId: string) => `last_sale:${tenantId}`
+export const setLastSale = async (tenantId: string, sale: unknown & { local_id?: string; id?: string }) => setMeta(lastSaleKey(tenantId), { id: sale.local_id ?? sale.id, value: sale })
+export const getLastSale = async (tenantId: string): Promise<{ id: string; value: unknown } | null> => getMeta(lastSaleKey(tenantId))
+export const clearLastSale = async (tenantId: string) => setMeta(lastSaleKey(tenantId), null)
+
+export const getPendingQueue = async (tenantId: string) => readJson<PendingQueueItem[]>(key.pending, []).filter((item) => item.tenant_id === tenantId)
+export const addPendingQueueItem = async (item: PendingQueueItem) => { writeJson(key.pending, [...readJson<PendingQueueItem[]>(key.pending, []), item]); emit('pending-changed') }
+export const updatePendingQueueItem = async (item: PendingQueueItem) => {
+  const next = readJson<PendingQueueItem[]>(key.pending, []).map((row) => row.id === item.id ? item : row)
+  writeJson(key.pending, next)
+  emit('pending-changed')
+}
+
+export const saveContingencyBatch = async (payload: ContingencyBatchPayload) => {
+  await addPendingQueueItem({ id: payload.local_batch_id, tenant_id: payload.tenant_id, usuario_id: payload.usuario_id, type: 'CONTINGENCY_BATCH', payload, status: 'PENDING_SYNC', created_at: payload.captured_at, last_attempt_at: null, error_message: null })
+}
+
+export const nextContingencyFolio = async (tenantId: string) => {
+  const metaKey = `cont_counter:${tenantId}:${new Date().toISOString().slice(0, 10)}`
+  const next = ((await getMeta<number>(metaKey)) ?? 0) + 1
+  await setMeta(metaKey, next)
+  return `CONT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(next).padStart(3, '0')}`
+}
+
+export const nextPorPagarFolio = async (tenantId: string) => {
+  const metaKey = `porpagar_counter:${tenantId}:${new Date().toISOString().slice(0, 10)}`
+  const next = ((await getMeta<number>(metaKey)) ?? 0) + 1
+  await setMeta(metaKey, next)
+  return `PP-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(next).padStart(3, '0')}`
+}
+
+const readPorPagar = () => readJson<PorPagarOrder[]>(key.porPagar, [])
+const writePorPagar = (orders: PorPagarOrder[]) => writeJson(key.porPagar, orders)
+
+export const getPorPagarList = async (tenantId: string) => readPorPagar().filter((item) => item.tenant_id === tenantId)
+export const createPorPagarOrder = async (order: PorPagarOrder) => { writePorPagar([...readPorPagar(), order]); emit('por-pagar-changed') }
+export const addPorPagarPayment = async (orderId: string, payment: PorPagarOrder['payment_history'][number]) => {
+  const next = readPorPagar().map((order) => order.id !== orderId ? order : {
+    ...order,
+    balance: Math.max(0, Number((order.balance - payment.amount).toFixed(2))),
+    status: (order.balance - payment.amount <= 0 ? 'LIQUIDADO' : 'ABIERTO') as PorPagarOrder['status'],
+    payment_history: [...order.payment_history, payment],
+    updated_at: nowIso()
+  })
+  writePorPagar(next)
+  emit('por-pagar-changed')
+}
+export const cancelPorPagarOrder = async (orderId: string, canceledAt: string) => {
+  writePorPagar(readPorPagar().map((order) => order.id === orderId ? { ...order, status: 'CANCELADO', canceled_at: canceledAt, updated_at: canceledAt } : order))
+  emit('por-pagar-changed')
+}
+export const markPorPagarDelivered = async (orderId: string, deliveredAt: string) => {
+  writePorPagar(readPorPagar().map((order) => order.id === orderId ? { ...order, status: 'ENTREGADO', delivered_at: deliveredAt, updated_at: deliveredAt } : order))
   emit('por-pagar-changed')
 }

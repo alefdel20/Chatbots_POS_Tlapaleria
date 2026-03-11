@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { ContingencyBatchPayload, ContingencyLine, PaymentMethod, Product } from '../lib/types'
 import { formatMoney, nowIso, uuid } from '../lib/utils'
@@ -151,3 +151,5 @@ export default function ContingencyScreen({ products, tenantId, userId, onBack, 
     </div>
   )
 }
+
+
